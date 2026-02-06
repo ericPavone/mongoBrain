@@ -9,6 +9,7 @@ package-mode = false
 [tool.poetry.dependencies]
 python = "^3.10"
 pymongo = "^4.6"
+certifi = ">=2023.0"
 
 [build-system]
 requires = ["poetry-core"]

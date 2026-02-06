@@ -16,6 +16,13 @@ def get_client() -> MongoClient:
     cert = os.environ.get("MONGODB_TLS_CERT_KEY_FILE")
     allow_invalid = os.environ.get("MONGODB_TLS_ALLOW_INVALID_CERTS", "false").lower() == "true"
 
+    if "+srv" in uri and not ca:
+        try:
+            import certifi
+            ca = certifi.where()
+        except ImportError:
+            pass
+
     if ca:
         kwargs["tls"] = True
         kwargs["tlsCAFile"] = ca

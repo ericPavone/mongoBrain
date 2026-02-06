@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "db-bridge"
+version = "0.1.0"
+description = "OpenClaw skill: persist agent memory, guidelines, and knowledge seeds in MongoDB"
+authors = []
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pymongo = "^4.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

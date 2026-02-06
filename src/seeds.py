@@ -23,7 +23,6 @@ def store(args):
         "description": args.description,
         "content": args.content,
         "domain": args.domain,
-        "difficulty": args.difficulty,
         "tags": args.tags or [],
         "dependencies": args.dependencies or [],
         "version": 1,
@@ -45,8 +44,6 @@ def search(args):
     query = text_search_query(args.query)
     if args.domain:
         query["domain"] = args.domain
-    if args.difficulty:
-        query["difficulty"] = args.difficulty
 
     docs = list(
         col.find(query, TEXT_SCORE_PROJ)

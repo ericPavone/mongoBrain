@@ -67,7 +67,7 @@ def _insert_memory(col, content: str, category: str, domain: str,
 
 
 def _insert_seed(col, name: str, description: str, content: str,
-                 domain: str, tags: list[str], difficulty: str = "intermediate") -> bool:
+                 domain: str, tags: list[str]) -> bool:
     content = content.strip()
     if not content or len(content) < 10:
         return False
@@ -80,7 +80,6 @@ def _insert_seed(col, name: str, description: str, content: str,
         "description": description,
         "content": content,
         "domain": domain,
-        "difficulty": difficulty,
         "tags": tags,
         "dependencies": [],
         "version": 1,
@@ -388,6 +387,17 @@ poetry run python3 scripts/memory_ops.py search skill --query "" --active-only
 ```
 
 Se una sezione non e' presente nel database, ignorala e prosegui.
+
+### Creare nuove skill
+
+Per creare una nuova skill, attiva la skill-builder:
+
+```bash
+poetry run python3 scripts/memory_ops.py match-skill --trigger "create skill"
+poetry run python3 scripts/memory_ops.py get-skill --name skill-builder
+```
+
+Segui le guidelines della skill-builder per compilare ogni sezione del documento.
 """
 
 

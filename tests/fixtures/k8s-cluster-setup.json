@@ -1,0 +1,117 @@
+[
+  {
+    "name": "k8s-cluster-setup",
+    "description": "Guide for setting up production-ready Kubernetes clusters",
+    "version": 1,
+    "prompt_base": "You are a senior DevOps engineer specialized in Kubernetes cluster provisioning. Follow infrastructure-as-code principles and validate every step before proceeding.",
+    "triggers": ["k8s setup", "kubernetes cluster", "cluster setup", "k8s provisioning"],
+    "depends_on": [],
+    "guidelines": [
+      {
+        "title": "Infrastructure Assessment",
+        "content": "1. Identify target cloud provider or bare-metal environment\n2. Assess resource requirements (CPU, memory, storage)\n3. Define network topology (VPC, subnets, CIDR ranges)\n4. Choose control plane configuration (HA vs single)",
+        "task": "assessment",
+        "priority": 10,
+        "domain": "kubernetes",
+        "tags": ["infrastructure", "planning"]
+      },
+      {
+        "title": "Cluster Provisioning",
+        "content": "1. Install required CLI tools (kubectl, helm, cloud provider CLI)\n2. Configure provider credentials\n3. Create cluster with IaC tool (Terraform, Pulumi, eksctl)\n4. Verify control plane health\n5. Configure kubeconfig",
+        "task": "provisioning",
+        "priority": 9,
+        "domain": "kubernetes",
+        "tags": ["provisioning", "setup"]
+      },
+      {
+        "title": "Core Components Installation",
+        "content": "1. Install CNI plugin (Calico, Cilium)\n2. Deploy ingress controller (nginx, traefik)\n3. Set up cert-manager for TLS\n4. Configure storage classes\n5. Deploy metrics-server",
+        "task": "components",
+        "priority": 8,
+        "domain": "kubernetes",
+        "tags": ["components", "networking", "storage"]
+      },
+      {
+        "title": "Validation & Hardening",
+        "content": "1. Run CIS benchmark scan\n2. Configure RBAC policies\n3. Set up network policies\n4. Enable pod security standards\n5. Verify cluster autoscaler",
+        "task": "validation",
+        "priority": 7,
+        "domain": "kubernetes",
+        "tags": ["security", "validation", "hardening"]
+      }
+    ],
+    "seeds": [
+      {
+        "name": "k8s-version-matrix",
+        "description": "Kubernetes version compatibility matrix for core components",
+        "content": "K8s 1.28: Calico 3.26+, Cilium 1.14+, cert-manager 1.12+, nginx-ingress 1.8+\nK8s 1.29: Calico 3.27+, Cilium 1.15+, cert-manager 1.13+, nginx-ingress 1.9+\nK8s 1.30: Calico 3.28+, Cilium 1.16+, cert-manager 1.14+, nginx-ingress 1.10+",
+        "domain": "kubernetes",
+        "tags": ["versions", "compatibility"],
+        "dependencies": [],
+        "author": "team",
+        "version": 1
+      },
+      {
+        "name": "k8s-resource-sizing",
+        "description": "Resource sizing guidelines for different workload profiles",
+        "content": "Small (dev): 3 nodes, 2 vCPU / 4GB each, 50GB storage\nMedium (staging): 5 nodes, 4 vCPU / 8GB each, 100GB storage\nLarge (prod): 7+ nodes, 8 vCPU / 16GB each, 200GB+ storage\nControl plane: always 3 nodes for HA",
+        "domain": "kubernetes",
+        "tags": ["sizing", "resources", "capacity"],
+        "dependencies": ["k8s-version-matrix"],
+        "author": "team",
+        "version": 1
+      }
+    ],
+    "tools": [
+      {
+        "name": "kubectl-check",
+        "type": "cli",
+        "command": "kubectl cluster-info",
+        "description": "Verify cluster connectivity"
+      },
+      {
+        "name": "helm-install",
+        "type": "cli",
+        "command": "helm install <release> <chart> --namespace <ns> --create-namespace",
+        "description": "Install Helm chart"
+      },
+      {
+        "name": "cis-benchmark",
+        "type": "cli",
+        "command": "kube-bench run --targets master,node",
+        "description": "Run CIS Kubernetes benchmark"
+      },
+      {
+        "name": "node-status",
+        "type": "cli",
+        "command": "kubectl get nodes -o wide",
+        "description": "Check node status and versions"
+      }
+    ],
+    "examples": [
+      {
+        "input": "Set up a production k8s cluster on AWS with 5 nodes",
+        "output": "1. Assessment: AWS EKS, 5 m5.xlarge nodes, VPC with 3 AZs\n2. Provisioning: eksctl create cluster with managed node group\n3. Components: Calico CNI, nginx-ingress, cert-manager, gp3 storage class\n4. Validation: CIS benchmark pass, RBAC configured, network policies applied",
+        "description": "AWS EKS production cluster"
+      },
+      {
+        "input": "Create a local dev cluster for testing",
+        "output": "1. Assessment: local, kind or minikube, 3 nodes, minimal resources\n2. Provisioning: kind create cluster --config multi-node.yaml\n3. Components: default CNI, nginx-ingress via Helm\n4. Validation: basic connectivity and deployment test",
+        "description": "Local development cluster"
+      }
+    ],
+    "references": [
+      {
+        "url": "https://kubernetes.io/docs/setup/production-environment/",
+        "title": "Kubernetes Production Setup",
+        "description": "Official guide for production cluster setup"
+      },
+      {
+        "url": "https://www.cisecurity.org/benchmark/kubernetes",
+        "title": "CIS Kubernetes Benchmark",
+        "description": "Security hardening benchmark for Kubernetes"
+      }
+    ],
+    "active": true
+  }
+]

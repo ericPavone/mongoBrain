@@ -1,0 +1,114 @@
+[
+  {
+    "name": "landing-page-creation",
+    "description": "End-to-end landing page creation with copywriting and conversion optimization",
+    "version": 1,
+    "prompt_base": "You are a conversion-focused web developer and copywriter. Apply Dan Kennedy direct-response principles. Every element must serve the conversion goal.",
+    "triggers": ["landing page", "create landing", "landing page creation", "conversion page"],
+    "depends_on": [],
+    "guidelines": [
+      {
+        "title": "Market Research & Brief",
+        "content": "1. Identify the target audience and their pain points\n2. Analyze competitor landing pages\n3. Define the primary conversion goal (signup, purchase, download)\n4. Document the unique value proposition\n5. Collect testimonials and social proof",
+        "task": "research",
+        "priority": 10,
+        "domain": "landing-page",
+        "tags": ["research", "brief", "market"],
+        "agent": "researcher"
+      },
+      {
+        "title": "Wireframe & Structure",
+        "content": "1. Define page sections (hero, benefits, social proof, CTA)\n2. Plan the visual hierarchy\n3. Create mobile-first wireframe\n4. Map the user's eye flow\n5. Position CTAs strategically",
+        "task": "wireframe",
+        "priority": 9,
+        "domain": "landing-page",
+        "tags": ["wireframe", "structure", "layout"],
+        "agent": "designer"
+      },
+      {
+        "title": "Copywriting",
+        "content": "1. Write attention-grabbing headline (AIDA formula)\n2. Craft subheadline that expands the promise\n3. Write benefit-focused body copy\n4. Create urgency elements\n5. Write clear CTA text",
+        "task": "copywriting",
+        "priority": 8,
+        "domain": "landing-page",
+        "tags": ["copy", "writing", "conversion"]
+      },
+      {
+        "title": "Implementation",
+        "content": "1. Set up project structure (HTML, CSS, JS)\n2. Implement responsive layout\n3. Add animations and micro-interactions\n4. Integrate analytics tracking\n5. Connect form to backend",
+        "task": "implementation",
+        "priority": 8,
+        "domain": "landing-page",
+        "tags": ["code", "frontend", "development"],
+        "agent": "coder"
+      },
+      {
+        "title": "Visual Design",
+        "content": "1. Apply brand colors and typography\n2. Design hero image or illustration\n3. Create supporting graphics\n4. Optimize images for web\n5. Ensure visual consistency",
+        "task": "design",
+        "priority": 7,
+        "domain": "landing-page",
+        "tags": ["design", "visual", "brand"],
+        "agent": "designer"
+      },
+      {
+        "title": "Review & Optimization",
+        "content": "1. Run Lighthouse audit (performance, accessibility, SEO)\n2. Test on multiple devices and browsers\n3. Verify all links and forms work\n4. Check load time < 3s\n5. Review copy for clarity and persuasion",
+        "task": "review",
+        "priority": 7,
+        "domain": "landing-page",
+        "tags": ["review", "qa", "optimization"],
+        "agent": "reviewer"
+      }
+    ],
+    "seeds": [
+      {
+        "name": "landing-page-patterns",
+        "description": "High-converting landing page patterns and formulas",
+        "content": "HEADLINE FORMULAS:\n- How to [achieve goal] without [pain point]\n- The [number] [adjective] ways to [benefit]\n- [Number]% of [audience] [problem]. Here's the fix.\n\nSECTION ORDER (high-converting):\n1. Hero (headline + subheadline + CTA)\n2. Social proof (logos, testimonials)\n3. Benefits (3-5, icon + text)\n4. How it works (3 steps)\n5. More social proof (detailed testimonials)\n6. FAQ\n7. Final CTA with urgency\n\nCTA BEST PRACTICES:\n- Action verb + benefit: 'Start saving today'\n- Contrasting color from page palette\n- Above the fold AND at page bottom\n- Max 5 words",
+        "domain": "landing-page",
+        "tags": ["patterns", "conversion", "copywriting"],
+        "dependencies": [],
+        "author": "team",
+        "version": 1
+      }
+    ],
+    "tools": [
+      {
+        "name": "lighthouse-audit",
+        "type": "cli",
+        "command": "npx lighthouse <url> --output json --output-path ./report.json",
+        "description": "Run Lighthouse performance and accessibility audit"
+      },
+      {
+        "name": "screenshot-device",
+        "type": "cli",
+        "command": "npx capture-website-cli <url> --width <width> --height <height> --output screenshot.png",
+        "description": "Capture page screenshot at specific dimensions"
+      },
+      {
+        "name": "figma-export",
+        "type": "mcp",
+        "command": "figma_export_nodes",
+        "description": "Export design assets from Figma",
+        "config": { "format": "svg", "scale": 2 }
+      },
+      {
+        "name": "figma-create",
+        "type": "mcp",
+        "command": "figma_create_file",
+        "description": "Create a new Figma design file",
+        "config": { "team_id": "<team-id>" }
+      }
+    ],
+    "examples": [
+      {
+        "input": "Create a landing page for a SaaS product launch",
+        "output": "1. Research: competitor analysis, ICP definition, value prop mapping\n2. Wireframe: hero with demo video, 3-step how-it-works, pricing table\n3. Copy: 'Stop wasting hours on X. Automate in 5 minutes.'\n4. Implementation: Next.js, Tailwind, Framer Motion\n5. Design: brand-consistent, dark mode, product screenshots\n6. Review: Lighthouse 95+, mobile-optimized, forms tested",
+        "description": "SaaS product launch landing page"
+      }
+    ],
+    "references": [],
+    "active": true
+  }
+]

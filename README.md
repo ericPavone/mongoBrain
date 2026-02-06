@@ -81,7 +81,7 @@ poetry run python3 scripts/setup_db.py
 poetry run python3 scripts/memory_ops.py seed-boot --workspace ~/.openclaw/workspace
 ```
 
-`setup_db.py` crea le 5 collection, tutti gli indici, e un seed starter. E' idempotente: puoi eseguirlo quante volte vuoi.
+`setup_db.py` crea le 5 collection, tutti gli indici, 2 starter seeds e la skill `skill-builder` (wizard per creare nuove skill). E' idempotente: puoi eseguirlo quante volte vuoi.
 
 `seed-boot` inietta nel BOOT.md del workspace le istruzioni minimali per recuperare l'identita' dell'agente dal database all'avvio. E' il **seme irriducibile**: l'unica informazione che non puo' stare nel DB perche' serve per sapere che il DB esiste. Idempotente: se il seme e' gia' presente, non fa nulla. Se BOOT.md ha gia' altro contenuto, lo appende.
 
@@ -155,13 +155,14 @@ mongoBrain/
   scripts/                    # Entry point CLI
     setup_db.py               # Crea collection + indici (idempotente)
     memory_ops.py             # CLI con tutti i comandi
-  skills/                     # Skill JSON di esempio
-    README.md                 # Guida alla creazione di skill
-    k8s-cluster-setup.json    # Skill senza agent delegation
-    landing-page-creation.json # Skill con agent delegation + tool MCP
+  skills/                     # Skill JSON reali
+    skill-builder.json        # Wizard per creare nuove skill (installata dal setup)
   tests/
     docker-compose.yml        # MongoDB locale per test (tmpfs)
-    test_all.py               # Suite automatica: 143 test su tutte le collection
+    test_all.py               # Suite automatica: 206 test su tutte le collection
+    fixtures/                 # Skill JSON di esempio usate solo dai test
+      k8s-cluster-setup.json
+      landing-page-creation.json
 ```
 
 ---
@@ -199,7 +200,6 @@ poetry run python3 scripts/memory_ops.py store seed \
   --description "Fondamenti async/await in Python" \
   --content "asyncio e' il modulo standard per async programming..." \
   --domain python \
-  --difficulty beginner \
   --tags python async
 
 # Config agente (upsert: sovrascrive se esiste gia')
@@ -231,7 +231,7 @@ poetry run python3 scripts/memory_ops.py search memory --query "postgres" --doma
 poetry run python3 scripts/memory_ops.py search guideline --query "code review" --task pull-request
 
 # Cerca seeds
-poetry run python3 scripts/memory_ops.py search seed --query "async python" --difficulty beginner
+poetry run python3 scripts/memory_ops.py search seed --query "async python"
 
 # Cerca config agente
 poetry run python3 scripts/memory_ops.py search config --query "coding assistant" --agent-id default
@@ -355,7 +355,6 @@ poetry run python3 scripts/memory_ops.py seed-boot --workspace ~/.openclaw/works
 | `description` | string | si | — | Descrizione breve |
 | `content` | string | si | — | Contenuto della conoscenza |
 | `domain` | string | no | `general` | Dominio |
-| `difficulty` | string | no | `intermediate` | `beginner`, `intermediate`, `advanced` |
 | `tags` | string[] | no | `[]` | Tag |
 | `dependencies` | string[] | no | `[]` | Nomi di seeds prerequisiti |
 | `author` | string | no | `""` | Autore |
@@ -376,16 +375,19 @@ Semantica upsert: `type`+`agent_id` e' la chiave logica. `store config` sovrascr
 |-------|------|-----------|---------|-------------|
 | `name` | string | si | — | Slug unico della skill (chiave di upsert) |
 | `description` | string | si | — | Descrizione breve |
+| `prompt_base` | string | no | `""` | Prompt comportamentale: ruolo, metodologia, vincoli dell'agente |
 | `triggers` | string[] | no | `[]` | Keywords che attivano la skill |
 | `depends_on` | string[] | no | `[]` | Nomi di skill prerequisite |
-| `guidelines` | object[] | no | `[]` | Guidelines embedded (title, content, task, priority) |
-| `seeds` | object[] | no | `[]` | Seeds embedded (name, description, content, difficulty) |
-| `tools` | object[] | no | `[]` | Tools embedded (name, command, description) |
+| `guidelines` | object[] | no | `[]` | Guidelines embedded (title, content, task, priority, domain, tags, agent) |
+| `seeds` | object[] | no | `[]` | Seeds embedded (name, description, content, domain, tags, dependencies, author, version) |
+| `tools` | object[] | no | `[]` | Tools embedded (name, command, description, type, config) |
 | `examples` | object[] | no | `[]` | Esempi embedded (input, output, description) |
 | `references` | object[] | no | `[]` | Riferimenti embedded (url, title, description) |
 | `active` | bool | no | `true` | Attiva/disattiva senza cancellare |
 
-`store skill` crea una skill minimale (name + description + triggers). Per il documento completo con nested arrays, usare `import-skills --file`.
+`store skill` crea una skill minimale (name + description + triggers + prompt_base). Per il documento completo con nested arrays, usare `import-skills --file`.
+
+Schema unificato: guidelines e seeds embedded in una skill accettano tutti i campi canonici delle rispettive collection standalone. Un seed embedded ha lo stesso schema di un seed nella collection `seeds` (meno `_id`, `created_at`, `updated_at`). Questo permette round-trip senza perdita di informazione.
 
 Tutti i documenti hanno anche `version`, `active` (memory/guideline/skill), `created_at`, `updated_at` generati automaticamente.
 
@@ -404,7 +406,6 @@ Un skill pack e' un file JSON con un array di seeds. Rappresenta un "corso" o un
     "description": "Cosa insegna, in una riga",
     "content": "Contenuto completo. Puo' essere lungo.\nUsa \\n per i newline.",
     "domain": "nome-dominio",
-    "difficulty": "beginner",
     "tags": ["tag1", "tag2"],
     "dependencies": [],
     "author": "tuo-nome",
@@ -424,7 +425,6 @@ Un skill pack e' un file JSON con un array di seeds. Rappresenta un "corso" o un
     "description": "Pod, Deployment, Service, Namespace: i mattoni di Kubernetes",
     "content": "Kubernetes orchestra container su un cluster di nodi.\n\nConcetti fondamentali:\n\n- Pod: unita' minima di deployment, 1+ container che condividono network e storage\n- Deployment: gestisce repliche di Pod, rolling update, rollback\n- Service: endpoint stabile per accedere ai Pod (ClusterIP, NodePort, LoadBalancer)\n- Namespace: isolamento logico delle risorse nel cluster\n- ConfigMap/Secret: configurazione esternalizzata\n- PersistentVolume: storage che sopravvive al Pod\n\nComandi essenziali:\n- kubectl get pods/deploy/svc -n <namespace>\n- kubectl describe pod <name>\n- kubectl logs <pod> -f\n- kubectl apply -f manifest.yaml\n- kubectl rollout status deployment/<name>",
     "domain": "kubernetes",
-    "difficulty": "beginner",
     "tags": ["k8s", "containers", "orchestration"],
     "dependencies": [],
     "author": "team",
@@ -435,7 +435,6 @@ Un skill pack e' un file JSON con un array di seeds. Rappresenta un "corso" o un
     "description": "Ingress, NetworkPolicy, DNS interno di Kubernetes",
     "content": "Networking in Kubernetes:\n\n1. Ogni Pod ha un IP unico nel cluster\n2. I Service forniscono DNS: <service>.<namespace>.svc.cluster.local\n3. Ingress: routing HTTP/HTTPS dall'esterno ai Service\n   - Richiede un Ingress Controller (nginx, traefik, istio)\n   - Supporta TLS termination, path-based e host-based routing\n4. NetworkPolicy: firewall L3/L4 tra Pod\n   - Default: tutto aperto\n   - Deny-all + whitelist e' la best practice\n5. Service Mesh (opzionale): mTLS, observability, traffic management",
     "domain": "kubernetes",
-    "difficulty": "intermediate",
     "tags": ["k8s", "networking", "ingress"],
     "dependencies": ["k8s-core-concepts"],
     "author": "team",
@@ -446,7 +445,6 @@ Un skill pack e' un file JSON con un array di seeds. Rappresenta un "corso" o un
     "description": "Debug di Pod che non partono, CrashLoopBackOff, risorse insufficienti",
     "content": "Troubleshooting Kubernetes:\n\nPod in Pending:\n- kubectl describe pod → controlla Events\n- Cause comuni: risorse insufficienti, PVC non bound, node selector senza match\n\nPod in CrashLoopBackOff:\n- kubectl logs <pod> --previous → log del container crashato\n- Cause: errore applicativo, config mancante, probe che fallisce\n\nPod in ImagePullBackOff:\n- Immagine non esiste o registry non raggiungibile\n- Controllare imagePullSecrets\n\nService non raggiungibile:\n- kubectl get endpoints <svc> → se vuoto, selector non matcha i Pod\n- Controllare labels Pod vs selector Service\n\nRisorse:\n- kubectl top pods/nodes → uso CPU/memory\n- kubectl describe node → Allocatable vs Allocated",
     "domain": "kubernetes",
-    "difficulty": "intermediate",
     "tags": ["k8s", "debug", "troubleshooting"],
     "dependencies": ["k8s-core-concepts"],
     "author": "team",
@@ -478,7 +476,6 @@ poetry run python3 scripts/memory_ops.py search seed --query "kubernetes pod" --
 - Un file per dominio: `packs/kubernetes.json`, `packs/aws.json`, `packs/python.json`
 - Naming dei seeds: `<dominio>-<topic>`, es. `k8s-core-concepts`, `aws-lambda-basics`
 - Usa `dependencies` per creare percorsi: basics → intermediate → advanced
-- `difficulty` aiuta l'agente a scegliere il livello giusto per la risposta
 - `tags` servono per il filtering, non per la ricerca (la ricerca usa full-text su `name` + `description` + `content`)
 
 ### Template vuoto
@@ -490,7 +487,6 @@ poetry run python3 scripts/memory_ops.py search seed --query "kubernetes pod" --
     "description": "",
     "content": "",
     "domain": "",
-    "difficulty": "intermediate",
     "tags": [],
     "dependencies": [],
     "author": "",
@@ -711,7 +707,7 @@ poetry run python3 scripts/memory_ops.py migrate all --workspace /tmp/workspace
 
 ## Test
 
-### Suite automatica (143 test)
+### Suite automatica (206 test)
 
 ```bash
 # Avvia MongoDB locale
@@ -733,10 +729,11 @@ docker compose -f tests/docker-compose.yml down
 | Seeds | Store, dedup, search, export/import round-trip | 10 |
 | Agent Config | Create, upsert, get all/single, export/import, clone agent, boot type | 17 |
 | Skills | Store, dedup, get, match, activate/deactivate, search --active-only | 16 |
-| Skills import | Full document (guidelines, seeds, tools, examples), agent field, tool type/config MCP, single object import | 27 |
+| Skills import | Full doc, prompt_base, unified seed/guideline schema, agent field, MCP tools, export round-trip | 27 |
 | Migration | Scan, workspace files → agent_config, file piccoli saltati, idempotenza, knowledge, MEMORY.md, daily logs | 13 |
 | Seed-Boot | Creazione BOOT.md, idempotenza, append a file esistente, integrazione con migrate all | 9 |
-| Edge cases | Tutte le categorie, tutti i tipi config, caratteri speciali, depends_on, search limit | 21 |
+| Skill-Builder | Starter skill dal setup, 9 guidelines, 2 seeds, 5 tools, triggers, idempotenza re-setup | 44 |
+| Edge cases | Tutte le categorie, tutti i tipi config, caratteri speciali, depends_on, search limit | 20 |
 | Chat simulation | Flusso completo: load config → search → match-skill → remember → correzione → store guideline → agent delegation | 10 |
 
 ### Manualmente
@@ -754,8 +751,8 @@ poetry run python3 scripts/memory_ops.py store seed --name "test-seed" --descrip
 poetry run python3 scripts/memory_ops.py export-seeds > /tmp/seeds.json
 poetry run python3 scripts/memory_ops.py import-seeds --file /tmp/seeds.json
 
-# Import skill completa
-poetry run python3 scripts/memory_ops.py import-skills --file skills/k8s-cluster-setup.json
+# Import skill completa (esempio con fixture di test)
+poetry run python3 scripts/memory_ops.py import-skills --file tests/fixtures/k8s-cluster-setup.json
 poetry run python3 scripts/memory_ops.py get-skill --name "k8s-cluster-setup"
 poetry run python3 scripts/memory_ops.py match-skill --trigger "kubernetes cluster"
 ```

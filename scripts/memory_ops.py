@@ -62,11 +62,6 @@ def _build_parser():
     ss.add_argument("--description", required=True)
     ss.add_argument("--content", required=True)
     ss.add_argument("--domain", default="general")
-    ss.add_argument(
-        "--difficulty",
-        default="intermediate",
-        choices=["beginner", "intermediate", "advanced"],
-    )
     ss.add_argument("--tags", nargs="*", default=None)
     ss.add_argument("--dependencies", nargs="*", default=None)
     ss.add_argument("--author", default=None)
@@ -81,6 +76,7 @@ def _build_parser():
     sk = store_sub.add_parser("skill", help="Store a skill (minimal)")
     sk.add_argument("--name", required=True)
     sk.add_argument("--description", required=True)
+    sk.add_argument("--prompt-base", dest="prompt_base", default=None)
     sk.add_argument("--triggers", nargs="*", default=None)
     sk.add_argument("--depends-on", dest="depends_on", nargs="*", default=None)
     sk.set_defaults(func=skills.store)
@@ -97,7 +93,7 @@ def _build_parser():
     search_extras = {
         "memory": ["category"],
         "guideline": ["task"],
-        "seed": ["difficulty"],
+        "seed": [],
     }
 
     for name, func in search_funcs.items():

@@ -19,9 +19,9 @@ Five collections complement OpenClaw's native memory (MEMORY.md + daily logs = s
 |------------|---------|------------|
 | `memories` | Facts, preferences, notes, learned knowledge | `content`, `domain`, `category`, `confidence` |
 | `guidelines` | SOPs, checklists, best practices per domain/task | `title`, `content`, `domain`, `task`, `priority` |
-| `seeds` | Portable knowledge packages (transferable between agents) | `name`, `content`, `domain`, `difficulty`, `dependencies` |
+| `seeds` | Portable knowledge packages (transferable between agents) | `name`, `content`, `domain`, `tags`, `dependencies` |
 | `agent_config` | Agent config sections (soul, identity, tools, etc.) — upsert by type+agent_id | `type`, `content`, `agent_id` |
-| `skills` | Self-contained skills with embedded guidelines, seeds, tools, examples | `name`, `triggers`, `depends_on`, `guidelines[]`, `seeds[]`, `tools[]` |
+| `skills` | Self-contained skills with embedded guidelines, seeds, tools, examples | `name`, `prompt_base`, `triggers`, `depends_on`, `guidelines[]`, `seeds[]`, `tools[]` |
 
 ## Connection
 
@@ -84,7 +84,6 @@ poetry run python3 scripts/memory_ops.py store seed \
   --description "Core async/await patterns in Python" \
   --content "asyncio provides the foundation for async programming..." \
   --domain python \
-  --difficulty beginner \
   --tags python async
 ```
 
@@ -120,7 +119,7 @@ poetry run python3 scripts/memory_ops.py search memory --query "typescript" --do
 poetry run python3 scripts/memory_ops.py search guideline --query "code review" --domain code-review
 
 # Search seeds
-poetry run python3 scripts/memory_ops.py search seed --query "async" --domain python
+poetry run python3 scripts/memory_ops.py search seed --query "async"
 
 # Search config
 poetry run python3 scripts/memory_ops.py search config --query "assistant" --agent-id default
@@ -342,7 +341,7 @@ store memory --content "<the knowledge>" --category <type> --domain <domain> --s
 For portable knowledge packages:
 
 ```
-store seed --name "<unique-slug>" --description "<one-liner>" --content "<full knowledge>" --domain <domain> --difficulty <level>
+store seed --name "<unique-slug>" --description "<one-liner>" --content "<full knowledge>" --domain <domain>
 ```
 
 For agent configuration (upsert):
@@ -354,5 +353,18 @@ store config --type <soul|user|identity|tools|agents|heartbeat|bootstrap|boot> -
 For skills (minimal — use import-skills for full documents):
 
 ```
-store skill --name "<slug>" --description "<one-liner>" --triggers <keyword1> <keyword2>
+store skill --name "<slug>" --description "<one-liner>" --prompt-base "<role and behavior>" --triggers <keyword1> <keyword2>
 ```
+
+## Creating New Skills
+
+The `skill-builder` skill is pre-installed by `setup_db.py`. It guides you through creating a complete skill document in 9 steps.
+
+To activate it:
+
+```bash
+poetry run python3 scripts/memory_ops.py match-skill --trigger "create skill"
+poetry run python3 scripts/memory_ops.py get-skill --name skill-builder
+```
+
+The wizard walks through: briefing, identity, prompt_base, guidelines, seeds, tools, examples, references, and final assembly with validation.

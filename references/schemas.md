@@ -106,7 +106,6 @@ Portable knowledge packages — transferable between agents.
   "description": "string — what this seed teaches (required)",
   "content": "string — full knowledge content (required)",
   "domain": "string — e.g. 'aws', 'python' (default: 'general')",
-  "difficulty": "string — one of: beginner, intermediate, advanced (default: 'intermediate')",
   "tags": ["string"],
   "dependencies": ["string — names of prerequisite seeds"],
   "version": "int (default: 1)",
@@ -121,7 +120,7 @@ Portable knowledge packages — transferable between agents.
 | Name | Fields | Type | Purpose |
 |------|--------|------|---------|
 | `name_unique` | `{name: 1}` | unique | Enforce unique seed names |
-| `domain_difficulty` | `{domain: 1, difficulty: 1}` | compound | Filter by domain+level |
+| `domain` | `{domain: 1}` | single | Filter by domain |
 | `tags` | `{tags: 1}` | single | Filter by tag |
 | `text_search` | `{name: "text", description: "text", content: "text"}` | text | Full-text search |
 
@@ -136,7 +135,6 @@ Seeds are exported as JSON arrays. Each element matches the schema above minus `
     "description": "Core concepts of AWS Lambda",
     "content": "Lambda is a serverless compute service...",
     "domain": "aws",
-    "difficulty": "beginner",
     "tags": ["serverless", "aws", "lambda"],
     "dependencies": [],
     "version": 1,
@@ -203,23 +201,32 @@ Self-contained skill packages with embedded guidelines, seeds, tools, examples, 
   "name": "string — unique skill identifier, e.g. 'code-review' (required, unique)",
   "description": "string — what this skill does (required)",
   "version": "int (default: 1)",
+  "prompt_base": "string — behavioral prompt: role, methodology, constraints (default: '')",
   "triggers": ["string — keywords that activate this skill, e.g. 'review', 'PR review'"],
   "depends_on": ["string — names of prerequisite skills"],
   "guidelines": [
     {
-      "title": "string",
-      "content": "string",
-      "task": "string",
-      "priority": "int",
-      "agent": "string — optional capability reference (agent type or skill name, see resolution logic below)"
+      "title": "string (required)",
+      "content": "string (required)",
+      "task": "string (required)",
+      "priority": "int (required, 1-10)",
+      "domain": "string — same as skill domain",
+      "tags": ["string"],
+      "agent": "string — optional capability reference (agent type or skill name, see resolution logic below)",
+      "input_format": "string (optional)",
+      "output_format": "string (optional)"
     }
   ],
   "seeds": [
     {
-      "name": "string",
-      "description": "string",
-      "content": "string",
-      "difficulty": "string"
+      "name": "string (required)",
+      "description": "string (required)",
+      "content": "string (required)",
+      "domain": "string — same as skill domain",
+      "tags": ["string"],
+      "dependencies": ["string — other seed names"],
+      "author": "string",
+      "version": "int (default: 1)"
     }
   ],
   "tools": [
@@ -262,7 +269,9 @@ Self-contained skill packages with embedded guidelines, seeds, tools, examples, 
 
 ### Notes
 
-- `store skill` creates a minimal skill (name + description + triggers). Use `import-skills --file` for the full document with nested arrays.
+- `store skill` creates a minimal skill (name + description + prompt_base + triggers). Use `import-skills --file` for the full document with nested arrays.
+- `prompt_base` sets the agent's behavioral context for the entire skill execution (role, methodology, constraints). It belongs on the skill, not on seeds — seeds are knowledge, the skill is orchestration.
+- Embedded guidelines and seeds use the **unified schema**: they accept all the same fields as their standalone counterparts (minus `_id`, `created_at`, `updated_at`). This allows round-trip between embedded and standalone without information loss.
 - `match-skill --trigger` queries the `triggers` multikey index to find skills by activation keyword.
 - `depends_on` references other skill names; the runtime should load dependencies recursively.
 - `guidelines[].agent` is a soft capability reference resolved at runtime: (1) known agent type → delegate, (2) skill name in DB → load skill context, (3) neither → current agent handles step. Absence means current agent.
@@ -278,14 +287,15 @@ Skills are exported as JSON arrays (or a single object for import). Each element
     "name": "code-review",
     "description": "Structured code review with checklist",
     "version": 1,
+    "prompt_base": "You are a senior code reviewer. Follow the checklist in priority order.",
     "triggers": ["review", "code review", "PR review"],
     "depends_on": ["git-basics"],
     "guidelines": [
-      { "title": "Review Checklist", "content": "1. Check naming...", "task": "review", "priority": 9 }
+      { "title": "Review Checklist", "content": "1. Check naming...", "task": "review", "priority": 9, "domain": "code-review", "tags": ["checklist"] }
     ],
     "seeds": [],
     "tools": [
-      { "name": "diff", "command": "git diff", "description": "Show changes" }
+      { "name": "diff", "type": "cli", "command": "git diff", "description": "Show changes" }
     ],
     "examples": [
       { "input": "Review this PR", "output": "Starting review...", "description": "Basic trigger" }

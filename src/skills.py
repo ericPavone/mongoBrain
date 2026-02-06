@@ -25,10 +25,13 @@ def store(args):
     triggers = args.triggers or []
     depends_on = args.depends_on or []
 
+    prompt_base = getattr(args, "prompt_base", None) or ""
+
     doc = {
         "name": args.name,
         "description": args.description,
         "version": 1,
+        "prompt_base": prompt_base,
         "triggers": triggers,
         "depends_on": depends_on,
         "guidelines": [],
@@ -137,6 +140,7 @@ def import_from_file(args):
 
         s["updated_at"] = now
         s.setdefault("version", 1)
+        s.setdefault("prompt_base", "")
         s.setdefault("triggers", [])
         s.setdefault("depends_on", [])
         s.setdefault("guidelines", [])

@@ -21,7 +21,7 @@ from pathlib import Path
 
 TEST_DB = "mongobrain_test_auto"
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
-SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 CLI = [sys.executable, str(SCRIPTS / "memory_ops.py")]
 SETUP = [sys.executable, str(SCRIPTS / "setup_db.py")]
 
@@ -246,10 +246,10 @@ def test_seeds():
                "--name", "docker-basics",
                "--description", "Core Docker concepts",
                "--content", "Docker containers package applications with their dependencies",
-               "--domain", "devops", "--difficulty", "beginner",
+               "--domain", "devops",
                "--tags", "docker", "containers"])
     assert_true("store seed returns _id", "_id" in doc)
-    assert_eq("seed difficulty", doc["difficulty"], "beginner")
+    assert_eq("seed domain", doc["domain"], "devops")
 
     # Duplicate name → fail
     dup = run(["store", "seed",
@@ -277,7 +277,7 @@ def test_seeds():
     # Import new seed via file
     new_seeds = [{"name": "k8s-pods", "description": "Kubernetes Pod basics",
                   "content": "A Pod is the smallest deployable unit in Kubernetes",
-                  "domain": "devops", "difficulty": "beginner", "tags": ["k8s"]}]
+                  "domain": "devops", "tags": ["k8s"]}]
     tmpfile = write_tmp_json(new_seeds)
     imported = run(["import-seeds", "--file", tmpfile])
     os.unlink(tmpfile)
@@ -453,7 +453,7 @@ def test_skills_import_full():
     print("=== SKILLS IMPORT (FULL DOCUMENT) ===")
 
     # Import k8s skill
-    k8s_file = str(SKILLS_DIR / "k8s-cluster-setup.json")
+    k8s_file = str(FIXTURES_DIR / "k8s-cluster-setup.json")
     imported = run(["import-skills", "--file", k8s_file])
     assert_eq("import k8s skill upserted", imported["upserted"], 1)
     assert_eq("import k8s skill no errors", len(imported["errors"]), 0)
@@ -467,19 +467,50 @@ def test_skills_import_full():
     assert_eq("k8s skill references count", len(doc["references"]), 2)
     assert_true("k8s skill triggers present", len(doc["triggers"]) >= 3)
 
+    # Verify prompt_base persisted
+    assert_true("k8s skill has prompt_base", len(doc.get("prompt_base", "")) > 0)
+    assert_contains("k8s prompt_base content", doc["prompt_base"], "DevOps")
+
+    # Verify unified seed schema (canonical fields preserved)
+    seed0 = doc["seeds"][0]
+    assert_eq("embedded seed has domain", seed0["domain"], "kubernetes")
+    assert_true("embedded seed has tags", len(seed0.get("tags", [])) > 0)
+    assert_true("embedded seed has dependencies", "dependencies" in seed0)
+    assert_eq("embedded seed has author", seed0["author"], "team")
+    assert_eq("embedded seed has version", seed0["version"], 1)
+
+    # Verify unified guideline schema (canonical fields preserved)
+    gl0 = doc["guidelines"][0]
+    assert_eq("embedded guideline has domain", gl0["domain"], "kubernetes")
+    assert_true("embedded guideline has tags", len(gl0.get("tags", [])) > 0)
+
     # Import landing page skill (has agent + type fields)
-    landing_file = str(SKILLS_DIR / "landing-page-creation.json")
+    landing_file = str(FIXTURES_DIR / "landing-page-creation.json")
     imported = run(["import-skills", "--file", landing_file])
     assert_eq("import landing skill upserted", imported["upserted"], 1)
 
-    # Verify agent field persisted
+    # Verify prompt_base on landing skill
     doc = run(["get-skill", "--name", "landing-page-creation"])
+    assert_contains("landing prompt_base content", doc["prompt_base"], "Dan Kennedy")
+
+    # Verify agent field persisted
     agents = [g.get("agent") for g in doc["guidelines"] if g.get("agent")]
     assert_eq("landing skill has 5 agent references", len(agents), 5)
     assert_true("researcher agent referenced", "researcher" in agents)
     assert_true("coder agent referenced", "coder" in agents)
     assert_true("designer agent referenced", "designer" in agents)
     assert_true("reviewer agent referenced", "reviewer" in agents)
+
+    # Verify unified guideline schema on landing skill
+    gl_landing = doc["guidelines"][0]
+    assert_eq("landing guideline has domain", gl_landing["domain"], "landing-page")
+    assert_true("landing guideline has tags", len(gl_landing.get("tags", [])) > 0)
+
+    # Verify unified seed schema on landing skill
+    seed_landing = doc["seeds"][0]
+    assert_eq("landing seed has domain", seed_landing["domain"], "landing-page")
+    assert_true("landing seed has tags", len(seed_landing.get("tags", [])) > 0)
+    assert_eq("landing seed has author", seed_landing["author"], "team")
 
     # Verify tool type field persisted
     mcp_tools = [t for t in doc["tools"] if t.get("type") == "mcp"]
@@ -492,11 +523,15 @@ def test_skills_import_full():
     imported = run(["import-skills", "--file", k8s_file])
     assert_eq("re-import k8s skill no new upserts", imported["upserted"], 0)
 
-    # Export round-trip
+    # Export round-trip: verify canonical fields survive
     exported = run(["export-skills"])
     assert_true("export skills returns list", isinstance(exported, list))
     assert_true("export has multiple skills", len(exported) >= 2)
     assert_true("exported no _id", all("_id" not in s for s in exported))
+    k8s_exported = [s for s in exported if s["name"] == "k8s-cluster-setup"][0]
+    assert_true("exported skill has prompt_base", len(k8s_exported.get("prompt_base", "")) > 0)
+    assert_eq("exported seed keeps domain", k8s_exported["seeds"][0]["domain"], "kubernetes")
+    assert_eq("exported seed keeps author", k8s_exported["seeds"][0]["author"], "team")
 
     # Export single skill
     exported_one = run(["export-skills", "--name", "k8s-cluster-setup"])
@@ -513,6 +548,7 @@ def test_skills_import_full():
     doc = run(["get-skill", "--name", "single-import-test"])
     assert_eq("single import defaults guidelines", doc["guidelines"], [])
     assert_eq("single import defaults active", doc["active"], True)
+    assert_eq("single import defaults prompt_base", doc["prompt_base"], "")
 
     # Import with missing name → error
     bad_skill = [{"description": "no name"}]
@@ -652,6 +688,71 @@ def test_seed_boot():
 
 
 # ---------------------------------------------------------------------------
+# Test: skill-builder (starter skill from setup_db)
+# ---------------------------------------------------------------------------
+
+def test_skill_builder():
+    print("=== SKILL-BUILDER ===")
+
+    # skill-builder was inserted by setup_db.py
+    doc = run(["get-skill", "--name", "skill-builder"])
+    assert_eq("skill-builder exists", doc["name"], "skill-builder")
+    assert_eq("skill-builder active", doc["active"], True)
+    assert_true("skill-builder has prompt_base", len(doc.get("prompt_base", "")) > 0)
+    assert_contains("skill-builder prompt_base", doc["prompt_base"], "skill architect")
+
+    # Guidelines: 9 phases
+    assert_eq("skill-builder guidelines count", len(doc["guidelines"]), 9)
+    tasks = [g["task"] for g in doc["guidelines"]]
+    assert_true("has briefing guideline", "briefing" in tasks)
+    assert_true("has identity guideline", "identity" in tasks)
+    assert_true("has prompt-base guideline", "prompt-base" in tasks)
+    assert_true("has guidelines guideline", "guidelines" in tasks)
+    assert_true("has seeds guideline", "seeds" in tasks)
+    assert_true("has tools guideline", "tools" in tasks)
+    assert_true("has examples guideline", "examples" in tasks)
+    assert_true("has references guideline", "references" in tasks)
+    assert_true("has save guideline", "save" in tasks)
+
+    # All guidelines have canonical fields
+    for g in doc["guidelines"]:
+        assert_true(f"guideline '{g['task']}' has domain", "domain" in g)
+        assert_true(f"guideline '{g['task']}' has tags", len(g.get("tags", [])) > 0)
+
+    # Seeds: schema reference + design patterns
+    assert_eq("skill-builder seeds count", len(doc["seeds"]), 2)
+    seed_names = [s["name"] for s in doc["seeds"]]
+    assert_true("has schema seed", "skill-document-schema" in seed_names)
+    assert_true("has patterns seed", "skill-design-patterns" in seed_names)
+
+    # Seeds have canonical fields
+    for s in doc["seeds"]:
+        assert_true(f"seed '{s['name']}' has domain", "domain" in s)
+        assert_true(f"seed '{s['name']}' has author", "author" in s)
+
+    # Tools
+    assert_eq("skill-builder tools count", len(doc["tools"]), 5)
+
+    # Examples
+    assert_eq("skill-builder examples count", len(doc["examples"]), 2)
+
+    # Triggers work
+    docs = run(["match-skill", "--trigger", "create skill"])
+    assert_eq("trigger 'create skill' matches", docs[0]["name"], "skill-builder")
+
+    docs = run(["match-skill", "--trigger", "crea skill"])
+    assert_eq("trigger 'crea skill' matches", docs[0]["name"], "skill-builder")
+
+    # Re-run setup_db → skill-builder updated, not duplicated
+    subprocess.run(SETUP, capture_output=True, text=True, env=ENV, timeout=15)
+    results = run(["search", "skill", "--query", "skill-builder"])
+    skill_builders = [r for r in results if r.get("name") == "skill-builder"]
+    assert_eq("no duplicate after re-setup", len(skill_builders), 1)
+
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Test: Edge cases and cross-collection scenarios
 # ---------------------------------------------------------------------------
 
@@ -708,7 +809,7 @@ def test_edge_cases():
                "--name", "advanced-docker",
                "--description", "Advanced Docker patterns",
                "--content", "Multi-stage builds, BuildKit, layer caching optimization strategies",
-               "--domain", "devops", "--difficulty", "advanced",
+               "--domain", "devops",
                "--dependencies", "docker-basics"])
     assert_eq("seed dependencies", doc["dependencies"], ["docker-basics"])
 
@@ -790,6 +891,7 @@ def main():
     test_skills_import_full()
     test_migration()
     test_seed_boot()
+    test_skill_builder()
     test_edge_cases()
     test_chat_simulation()
 

@@ -1,4 +1,4 @@
-# db-bridge
+# mongoBrain
 
 Skill OpenClaw che aggiunge memoria persistente strutturata a qualsiasi agente, usando MongoDB come storage.
 
@@ -11,43 +11,54 @@ Complementa il sistema nativo di OpenClaw (MEMORY.md + daily logs = memoria di s
                          │
           ┌──────────────┼──────────────┐
           │              │              │
-     MEMORY.md      daily logs     db-bridge
+     MEMORY.md      daily logs     mongoBrain
    (scratchpad)   (session-memory)  (MongoDB)
      volatile       per-sessione    persistente
                                     strutturato
                                     portabile
 ```
 
-L'agente ha 3 tipi di storage nel DB:
+L'agente ha 5 tipi di storage nel DB:
 
 | Collection | Cosa contiene | Quando usarla |
 |------------|--------------|---------------|
 | **memories** | Fatti, preferenze, note, correzioni | L'agente impara qualcosa dalla chat |
 | **guidelines** | Procedure, checklist, best practice | L'agente deve seguire regole per un task |
 | **seeds** | Pacchetti di conoscenza portabili | Trasferire competenze tra agenti |
+| **agent_config** | Sezioni di configurazione dell'agente (soul, identity, tools, ecc.) | Definire lo scheletro e il comportamento dell'agente |
+| **skills** | Skill self-contained con guidelines, seeds, tools, examples embedded | L'agente deve scoprire, caricare ed eseguire una competenza completa |
 
 ### Flusso tipico in una chat
 
 ```
 1. Sessione inizia
-   └→ L'agente cerca nel DB contesto rilevante (memorie + guidelines + seeds)
+   └→ Agente principale: carica tutta la config (get-config --agent-id default)
+      + indice skill attive (search skill --active-only)
+   └→ Sub-agente OpenClaw: carica solo agents + tools
+      (get-config --type agents + get-config --type tools)
+   └→ Cerca nel DB contesto rilevante (memorie + guidelines + seeds)
 
 2. Utente chiede qualcosa
    └→ L'agente cerca nel DB prima di rispondere
 
-3. Utente dice "ricorda che usiamo Traefik"
+3. Utente dice "fai una code review"
+   └→ match-skill --trigger "review" → trova la skill "code-review"
+   └→ get-skill --name "code-review" → carica guidelines, seeds, tools, examples
+   └→ Esegue usando tutto il contesto della skill
+
+4. Utente dice "ricorda che usiamo Traefik"
    └→ L'agente salva come memory (category: fact, source: conversation)
 
-4. Utente corregge: "no, usiamo Caddy non Traefik"
+5. Utente corregge: "no, usiamo Caddy non Traefik"
    └→ L'agente salva la correzione (category: feedback, confidence: 1.0)
 
-5. L'agente risolve un problema complesso
+6. L'agente risolve un problema complesso
    └→ Salva la soluzione come guideline riutilizzabile
 
-6. Utente chiede "cosa sai del nostro stack?"
-   └→ L'agente cerca in tutte e 3 le collection e sintetizza
+7. Utente chiede "cosa sai del nostro stack?"
+   └→ L'agente cerca in tutte le collection e sintetizza
 
-7. Sessione finisce
+8. Sessione finisce
    └→ L'agente salva una nota riepilogativa di cio' che ha imparato
 ```
 
@@ -64,12 +75,12 @@ L'agente ha 3 tipi di storage nel DB:
 ### Installazione
 
 ```bash
-cd db-bridge
+cd mongoBrain
 poetry install
 poetry run python3 scripts/setup_db.py
 ```
 
-`setup_db.py` crea le 3 collection, tutti gli indici, e un seed starter. E' idempotente: puoi eseguirlo quante volte vuoi.
+`setup_db.py` crea le 5 collection, tutti gli indici, e un seed starter. E' idempotente: puoi eseguirlo quante volte vuoi.
 
 ---
 
@@ -88,21 +99,25 @@ Tutto gestito via variabili d'ambiente:
 ### Scenari
 
 **Locale** — zero config, usa i default:
+
 ```bash
 poetry run python3 scripts/setup_db.py
 ```
 
 **VPS remota**:
+
 ```env
 MONGODB_URI=mongodb://myuser:mypass@203.0.113.10:27017/openclaw_memory
 ```
 
 **Cloud Atlas**:
+
 ```env
 MONGODB_URI=mongodb+srv://myuser:mypass@cluster0.abc123.mongodb.net/openclaw_memory
 ```
 
 **VPN + mutual TLS**:
+
 ```env
 MONGODB_URI=mongodb://10.0.0.5:27017
 MONGODB_TLS_CA_FILE=/etc/ssl/mongo/ca.pem
@@ -110,6 +125,7 @@ MONGODB_TLS_CERT_KEY_FILE=/etc/ssl/mongo/client.pem
 ```
 
 **Self-signed (dev/test)** — come sopra piu':
+
 ```env
 MONGODB_TLS_ALLOW_INVALID_CERTS=true
 ```
@@ -119,26 +135,30 @@ MONGODB_TLS_ALLOW_INVALID_CERTS=true
 ## Struttura del progetto
 
 ```
-db-bridge/
+mongoBrain/
   SKILL.md                    # Definizione skill OpenClaw + istruzioni per l'agente
   pyproject.toml              # Poetry: dipendenze
   references/
-    schemas.md                # Schema completo delle 3 collection + indici
+    schemas.md                # Schema completo delle 5 collection + indici
   src/                        # Logica di dominio (vertical slice)
     connection.py             # Connessione MongoDB condivisa + helpers
     memories.py               # Operazioni su memories
     guidelines.py             # Operazioni su guidelines
     seeds.py                  # Operazioni su seeds + export/import
+    agent_config.py           # Operazioni su agent_config (upsert per type+agent_id)
+    skills.py                 # Operazioni su skills (store, match, activate/deactivate)
     maintenance.py            # Prune memorie scadute
-  src/
     migrate.py                # Migrazione stato nativo OpenClaw → MongoDB
   scripts/                    # Entry point CLI
     setup_db.py               # Crea collection + indici (idempotente)
     memory_ops.py             # CLI con tutti i comandi
+  skills/                     # Skill JSON di esempio
+    README.md                 # Guida alla creazione di skill
+    k8s-cluster-setup.json    # Skill senza agent delegation
+    landing-page-creation.json # Skill con agent delegation + tool MCP
   tests/
-    docker-compose.yml        # MongoDB locale per test
-    skill-pack.json           # Pacchetto seeds di esempio
-    sim_chat_flow.py          # Simulazione flusso chat OpenClaw
+    docker-compose.yml        # MongoDB locale per test (tmpfs)
+    test_all.py               # Suite automatica: 134 test su tutte le collection
 ```
 
 ---
@@ -178,9 +198,23 @@ poetry run python3 scripts/memory_ops.py store seed \
   --domain python \
   --difficulty beginner \
   --tags python async
+
+# Config agente (upsert: sovrascrive se esiste gia')
+poetry run python3 scripts/memory_ops.py store config \
+  --type soul \
+  --content "You are a helpful coding assistant focused on Python." \
+  --agent-id default
+
+# Skill (minimale: name + description + triggers)
+poetry run python3 scripts/memory_ops.py store skill \
+  --name "code-review" \
+  --description "Structured code review con checklist" \
+  --triggers review "code review" "PR review"
 ```
 
-**Deduplicazione**: se esiste gia' un documento con lo stesso `content`+`domain` (memory/guideline) o `name` (seed), il comando fallisce con exit 1 e restituisce il documento esistente.
+**Deduplicazione**: se esiste gia' un documento con lo stesso `content`+`domain` (memory/guideline) o `name` (seed/skill), il comando fallisce con exit 1 e restituisce il documento esistente.
+
+**Upsert**: `store config` e' l'eccezione — sovrascrive il contenuto se `type`+`agent_id` esistono gia'. E' il comportamento corretto: stai *impostando* la config, non aggiungendo una seconda.
 
 ### Search
 
@@ -196,8 +230,51 @@ poetry run python3 scripts/memory_ops.py search guideline --query "code review" 
 # Cerca seeds
 poetry run python3 scripts/memory_ops.py search seed --query "async python" --difficulty beginner
 
+# Cerca config agente
+poetry run python3 scripts/memory_ops.py search config --query "coding assistant" --agent-id default
+
+# Cerca skills
+poetry run python3 scripts/memory_ops.py search skill --query "review" --active-only
+
 # Limita risultati
 poetry run python3 scripts/memory_ops.py search memory --query "deploy" --limit 5
+```
+
+### Agent Config
+
+```bash
+# Carica tutta la config di un agente
+poetry run python3 scripts/memory_ops.py get-config --agent-id default
+
+# Carica solo una sezione
+poetry run python3 scripts/memory_ops.py get-config --type soul
+
+# Esporta config
+poetry run python3 scripts/memory_ops.py export-config --agent-id default > config.json
+
+# Importa config (--agent-id sovrascrive l'agent_id nel file)
+poetry run python3 scripts/memory_ops.py import-config --file config.json --agent-id new-agent
+```
+
+### Skills
+
+```bash
+# Cerca una skill per trigger
+poetry run python3 scripts/memory_ops.py match-skill --trigger "review"
+
+# Carica una skill completa (con guidelines, seeds, tools, examples, references)
+poetry run python3 scripts/memory_ops.py get-skill --name "code-review"
+
+# Importa una skill completa da file JSON
+poetry run python3 scripts/memory_ops.py import-skills --file my-skill.json
+
+# Esporta skills
+poetry run python3 scripts/memory_ops.py export-skills > all-skills.json
+poetry run python3 scripts/memory_ops.py export-skills --name "code-review" > one-skill.json
+
+# Attiva/disattiva
+poetry run python3 scripts/memory_ops.py deactivate-skill --name "code-review"
+poetry run python3 scripts/memory_ops.py activate-skill --name "code-review"
 ```
 
 ### Export/Import seeds
@@ -272,7 +349,34 @@ poetry run python3 scripts/memory_ops.py deactivate --title "PR Review Checklist
 | `dependencies` | string[] | no | `[]` | Nomi di seeds prerequisiti |
 | `author` | string | no | `""` | Autore |
 
-Tutti i documenti hanno anche `version`, `active` (solo memory/guideline), `created_at`, `updated_at` generati automaticamente.
+### Agent Config
+
+| Campo | Tipo | Richiesto | Default | Descrizione |
+|-------|------|-----------|---------|-------------|
+| `type` | string | si | — | `soul`, `user`, `identity`, `tools`, `agents`, `heartbeat`, `bootstrap`, `boot` |
+| `content` | string | si | — | Contenuto markdown della sezione |
+| `agent_id` | string | no | `default` | Identificativo dell'agente |
+
+Semantica upsert: `type`+`agent_id` e' la chiave logica. `store config` sovrascrive se esiste gia'.
+
+### Skill
+
+| Campo | Tipo | Richiesto | Default | Descrizione |
+|-------|------|-----------|---------|-------------|
+| `name` | string | si | — | Slug unico della skill (chiave di upsert) |
+| `description` | string | si | — | Descrizione breve |
+| `triggers` | string[] | no | `[]` | Keywords che attivano la skill |
+| `depends_on` | string[] | no | `[]` | Nomi di skill prerequisite |
+| `guidelines` | object[] | no | `[]` | Guidelines embedded (title, content, task, priority) |
+| `seeds` | object[] | no | `[]` | Seeds embedded (name, description, content, difficulty) |
+| `tools` | object[] | no | `[]` | Tools embedded (name, command, description) |
+| `examples` | object[] | no | `[]` | Esempi embedded (input, output, description) |
+| `references` | object[] | no | `[]` | Riferimenti embedded (url, title, description) |
+| `active` | bool | no | `true` | Attiva/disattiva senza cancellare |
+
+`store skill` crea una skill minimale (name + description + triggers). Per il documento completo con nested arrays, usare `import-skills --file`.
+
+Tutti i documenti hanno anche `version`, `active` (memory/guideline/skill), `created_at`, `updated_at` generati automaticamente.
 
 ---
 
@@ -340,18 +444,19 @@ Un skill pack e' un file JSON con un array di seeds. Rappresenta un "corso" o un
 ]
 ```
 
-2. Importa:
+1. Importa:
 
 ```bash
 poetry run python3 scripts/memory_ops.py import-seeds --file packs/kubernetes.json
 ```
 
 Output:
+
 ```json
 { "upserted": 3, "updated": 0, "errors": [] }
 ```
 
-3. Verifica:
+1. Verifica:
 
 ```bash
 poetry run python3 scripts/memory_ops.py search seed --query "kubernetes pod" --domain kubernetes
@@ -388,11 +493,13 @@ poetry run python3 scripts/memory_ops.py search seed --query "kubernetes pod" --
 ## Portabilita': trasferire conoscenza tra agenti
 
 Esporta da agente A:
+
 ```bash
 poetry run python3 scripts/memory_ops.py export-seeds --domain kubernetes > k8s-seeds.json
 ```
 
 Importa su agente B (diverso DB, diversa macchina):
+
 ```bash
 MONGODB_URI=mongodb://other-host:27017 \
   poetry run python3 scripts/memory_ops.py import-seeds --file k8s-seeds.json
@@ -446,13 +553,14 @@ poetry run python3 scripts/memory_ops.py store guideline \
 ```
 
 Disattivare una guideline (senza cancellarla):
+
 ```bash
 poetry run python3 scripts/memory_ops.py deactivate --title "Commit message format"
 ```
 
 ---
 
-## Come l'agente usa db-bridge (Auto-Learn Protocol)
+## Come l'agente usa mongoBrain (Auto-Learn Protocol)
 
 Queste regole sono nel SKILL.md e guidano il comportamento automatico dell'agente.
 
@@ -479,6 +587,7 @@ Queste regole sono nel SKILL.md e guidano il comportamento automatico dell'agent
 ### Deduplicazione
 
 Il sistema rifiuta inserimenti duplicati:
+
 - **memories/guidelines**: stesso `content` + `domain` → errore con doc esistente
 - **seeds**: stesso `name` → errore con doc esistente
 
@@ -492,14 +601,14 @@ Se hai gia' un agente OpenClaw attivo con workspace popolato, puoi importare tut
 
 ### Cosa viene migrato
 
-| Sorgente | Destinazione | Dominio |
-|----------|-------------|---------|
-| `SOUL.md`, `USER.md`, `IDENTITY.md`, `TOOLS.md`, `AGENTS.md`, `HEARTBEAT.md`, `BOOTSTRAP.md` | seeds | `openclaw-config` |
+| Sorgente | Destinazione | Chiave |
+|----------|-------------|--------|
+| `SOUL.md`, `USER.md`, `IDENTITY.md`, `TOOLS.md`, `AGENTS.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`, `BOOT.md` | agent_config (upsert su type+agent_id) | `--agent-id` |
 | `knowledge/*.md` | seeds | `openclaw-knowledge` |
 | `templates/*.md` | seeds | `openclaw-templates` |
 | `projects/<nome>/**/*.md` | seeds (1 seed per progetto, file concatenati) | `openclaw-projects` |
-| `MEMORY.md` (sezioni) | memories | `openclaw-memory` |
-| `memory/*.md` (daily logs) | memories | `openclaw-daily` |
+| `MEMORY.md` (sezioni) | memories | `--domain` |
+| `memory/*.md` (daily logs) | memories | `--domain` |
 
 ### Scan (dry run)
 
@@ -510,6 +619,7 @@ poetry run python3 scripts/memory_ops.py migrate scan --workspace ~/.openclaw/wo
 ```
 
 Output di esempio:
+
 ```json
 {
   "workspace": "/home/claw/.openclaw/workspace",
@@ -531,16 +641,16 @@ Output di esempio:
 ### Migra tutto
 
 ```bash
-poetry run python3 scripts/memory_ops.py migrate all --workspace ~/.openclaw/workspace
+poetry run python3 scripts/memory_ops.py migrate all --workspace ~/.openclaw/workspace --agent-id default
 ```
 
-Se ometti `--workspace`, usa il default `~/.openclaw/workspace`.
+Se ometti `--workspace`, usa il default `~/.openclaw/workspace`. Se ometti `--agent-id`, usa `default`.
 
 ### Migra singole sorgenti
 
 ```bash
-# Solo workspace files (SOUL.md, TOOLS.md, ecc.)
-poetry run python3 scripts/memory_ops.py migrate workspace-files --workspace ~/.openclaw/workspace
+# Solo workspace files (SOUL.md, TOOLS.md, ecc.) → agent_config
+poetry run python3 scripts/memory_ops.py migrate workspace-files --workspace ~/.openclaw/workspace --agent-id default
 
 # Solo knowledge/
 poetry run python3 scripts/memory_ops.py migrate knowledge --workspace ~/.openclaw/workspace
@@ -560,10 +670,14 @@ poetry run python3 scripts/memory_ops.py migrate daily-logs --workspace ~/.openc
 
 ### Idempotenza
 
-La migrazione e' sicura da rieseguire: se un seed con lo stesso `name` esiste gia', viene saltato. Se una memory con lo stesso `content`+`domain` esiste gia', viene saltata. L'output indica quanti documenti sono stati migrati e quanti saltati:
+La migrazione e' sicura da rieseguire:
+
+- **workspace-files**: upsert su `type`+`agent_id` in `agent_config` — aggiorna se esiste, crea se nuovo
+- **seeds**: se un seed con lo stesso `name` esiste gia', viene saltato
+- **memories**: se una memory con lo stesso `content`+`domain` esiste gia', viene saltata
 
 ```json
-{ "migrated": 7, "skipped": 0, "source": "/home/claw/.openclaw/workspace", "type": "workspace-files" }
+{ "upserted": 2, "updated": 0, "skipped": 0, "source": "...", "agent_id": "default", "type": "workspace-files" }
 ```
 
 ### Workspace remoto via SSH
@@ -584,24 +698,32 @@ poetry run python3 scripts/memory_ops.py migrate all --workspace /tmp/workspace
 
 ## Test
 
-### Con Docker Compose
+### Suite automatica (134 test)
 
 ```bash
 # Avvia MongoDB locale
 docker compose -f tests/docker-compose.yml up -d
 
-# Setup DB
-poetry run python3 scripts/setup_db.py
-
-# Esegui simulazione chat completa
-poetry run python3 tests/sim_chat_flow.py
+# Lancia tutti i test
+poetry run python3 tests/test_all.py
 
 # Ferma
 docker compose -f tests/docker-compose.yml down
 ```
 
-La simulazione (`sim_chat_flow.py`) riproduce un flusso realistico di 12 step:
-import skill pack, ricerche contestuali, "ricorda X", correzione feedback, creazione guideline, deduplicazione, cambio sessione.
+`test_all.py` usa un database dedicato (`mongobrain_test_auto`) che viene droppato a ogni run. Copre:
+
+| Suite | Cosa testa | Test |
+|-------|-----------|------|
+| Memories | Store, dedup, search, expiry, prune, valori default | 12 |
+| Guidelines | Store, dedup, search, deactivate, filtro active | 8 |
+| Seeds | Store, dedup, search, export/import round-trip | 10 |
+| Agent Config | Create, upsert, get all/single, export/import, clone agent, boot type | 17 |
+| Skills | Store, dedup, get, match, activate/deactivate, search --active-only | 16 |
+| Skills import | Full document (guidelines, seeds, tools, examples), agent field, tool type/config MCP, single object import | 27 |
+| Migration | Scan, workspace files → agent_config, file piccoli saltati, idempotenza, knowledge, MEMORY.md, daily logs | 13 |
+| Edge cases | Tutte le categorie, tutti i tipi config, caratteri speciali, depends_on, search limit | 21 |
+| Chat simulation | Flusso completo: load config → search → match-skill → remember → correzione → store guideline → agent delegation | 10 |
 
 ### Manualmente
 
@@ -618,9 +740,10 @@ poetry run python3 scripts/memory_ops.py store seed --name "test-seed" --descrip
 poetry run python3 scripts/memory_ops.py export-seeds > /tmp/seeds.json
 poetry run python3 scripts/memory_ops.py import-seeds --file /tmp/seeds.json
 
-# Prune
-poetry run python3 scripts/memory_ops.py store memory --content "Temp" --category note --domain test --expires-at "2020-01-01T00:00:00+00:00"
-poetry run python3 scripts/memory_ops.py prune
+# Import skill completa
+poetry run python3 scripts/memory_ops.py import-skills --file skills/k8s-cluster-setup.json
+poetry run python3 scripts/memory_ops.py get-skill --name "k8s-cluster-setup"
+poetry run python3 scripts/memory_ops.py match-skill --trigger "kubernetes cluster"
 ```
 
 ---

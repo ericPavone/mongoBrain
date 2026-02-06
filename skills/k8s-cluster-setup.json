@@ -1,0 +1,96 @@
+[
+  {
+    "name": "k8s-cluster-setup",
+    "description": "Provisioning di un cluster Kubernetes da zero su cloud o bare-metal",
+    "version": 1,
+    "triggers": ["kubernetes cluster", "k8s setup", "create cluster", "provision k8s"],
+    "depends_on": [],
+    "guidelines": [
+      {
+        "title": "Pre-flight checklist",
+        "content": "1. Scegliere il target: managed (EKS/GKE/AKS) vs self-hosted (kubeadm/k3s/RKE2)\n2. Definire sizing: quanti nodi, CPU/RAM per nodo, storage class\n3. Networking: VPC/subnet, CIDR pod e service, CNI plugin (Calico/Cilium/Flannel)\n4. DNS: dominio per ingress, cert-manager per TLS\n5. IAM/RBAC: chi accede, con quali permessi\n6. Verificare quote cloud (vCPU, IP, load balancer)",
+        "task": "planning",
+        "priority": 10
+      },
+      {
+        "title": "Provisioning con IaC",
+        "content": "1. Definire infrastruttura in Terraform/Pulumi/OpenTofu\n2. Moduli consigliati:\n   - AWS: terraform-aws-eks\n   - GCP: terraform-google-gke\n   - Azure: terraform-azurerm-kubernetes-cluster\n   - Bare-metal: Ansible + kubeadm\n3. Creare: VPC, subnet, security group, node group, cluster\n4. Output: kubeconfig, endpoint API, certificate authority\n5. Salvare state in backend remoto (S3+DynamoDB, GCS, Azure Blob)",
+        "task": "provisioning",
+        "priority": 9
+      },
+      {
+        "title": "Post-install essentials",
+        "content": "1. CNI: verificare pod-to-pod connectivity\n2. CoreDNS: verificare risoluzione interna\n3. Ingress controller: nginx-ingress o traefik\n4. cert-manager: Let's Encrypt per TLS automatico\n5. Monitoring: kube-prometheus-stack (Prometheus + Grafana)\n6. Logging: Loki + Promtail o EFK stack\n7. Storage: CSI driver per il cloud provider\n8. Backup: Velero per disaster recovery\n9. Policy: OPA Gatekeeper o Kyverno per admission control",
+        "task": "post-install",
+        "priority": 8
+      },
+      {
+        "title": "Hardening e security",
+        "content": "1. RBAC: least privilege, no cluster-admin per utenti\n2. NetworkPolicy: deny-all default + whitelist\n3. Pod Security Standards: restricted profile\n4. Secrets: external-secrets-operator o Vault\n5. Image scanning: Trivy in CI/CD\n6. Audit logging: abilitare API server audit\n7. Aggiornamenti: piano di patching per control plane e nodi",
+        "task": "security",
+        "priority": 9
+      }
+    ],
+    "seeds": [
+      {
+        "name": "k8s-cluster-architectures",
+        "description": "Confronto managed vs self-hosted e sizing guidelines",
+        "content": "Managed (EKS/GKE/AKS):\n- Pro: control plane gestito, upgrade semplificati, SLA\n- Contro: costo, meno controllo, vendor lock-in\n- Sizing: dev 2 nodi t3.medium, staging 3 nodi m5.large, prod 3+ nodi m5.xlarge\n\nSelf-hosted (kubeadm/k3s/RKE2):\n- Pro: controllo totale, costo inferiore, air-gapped\n- Contro: gestione control plane, upgrade manuali, HA da configurare\n- k3s: ideale per edge/IoT, singolo binario\n- RKE2: FIPS compliant, orientato a security\n- kubeadm: vanilla Kubernetes, massima flessibilita'\n\nHA control plane: minimo 3 nodi master (etcd quorum), load balancer davanti all'API server",
+        "difficulty": "intermediate"
+      },
+      {
+        "name": "k8s-networking-fundamentals",
+        "description": "CNI, CIDR planning, service mesh basics",
+        "content": "CIDR planning:\n- Pod CIDR: /16 (65k pod) tipico, non deve sovrapporsi alla VPC\n- Service CIDR: /12 tipico\n- Node CIDR: dalla VPC/subnet\n\nCNI plugin:\n- Calico: NetworkPolicy L3/L4, BGP, performante\n- Cilium: eBPF-based, L7 policy, observability nativa\n- Flannel: semplice, VXLAN, no network policy nativa\n\nService types: ClusterIP (interno), NodePort (debug), LoadBalancer (produzione)\nIngress: L7 routing, TLS termination, path/host-based",
+        "difficulty": "intermediate"
+      }
+    ],
+    "tools": [
+      {
+        "name": "terraform-init-apply",
+        "command": "terraform init && terraform plan -out=tfplan && terraform apply tfplan",
+        "description": "Provisioning infrastruttura con Terraform"
+      },
+      {
+        "name": "kubeconfig-setup",
+        "command": "aws eks update-kubeconfig --name <cluster> --region <region>",
+        "description": "Configurare kubectl per accedere al cluster (AWS EKS)"
+      },
+      {
+        "name": "helm-install-essentials",
+        "command": "helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace",
+        "description": "Installare ingress controller via Helm"
+      },
+      {
+        "name": "cluster-health-check",
+        "command": "kubectl get nodes -o wide && kubectl get pods -A && kubectl cluster-info",
+        "description": "Verifica stato del cluster dopo provisioning"
+      }
+    ],
+    "examples": [
+      {
+        "input": "Crea un cluster Kubernetes su AWS per un'app web in produzione",
+        "output": "1. EKS con 3 nodi m5.large in 3 AZ\n2. Terraform per provisioning\n3. Cilium CNI + nginx-ingress\n4. cert-manager + external-dns\n5. kube-prometheus-stack per monitoring",
+        "description": "Cluster produzione su AWS"
+      },
+      {
+        "input": "Serve un cluster locale per sviluppo",
+        "output": "1. k3s su singola macchina (curl -sfL https://get.k3s.io | sh -)\n2. Traefik gia' incluso come ingress\n3. Local path provisioner per storage\n4. Alternativa: kind/minikube per test CI",
+        "description": "Cluster locale per dev"
+      }
+    ],
+    "references": [
+      {
+        "url": "https://kubernetes.io/docs/setup/production-environment/",
+        "title": "Kubernetes Production Setup",
+        "description": "Guida ufficiale per setup produzione"
+      },
+      {
+        "url": "https://registry.terraform.io/modules/terraform-aws-modules/eks/aws",
+        "title": "Terraform AWS EKS Module",
+        "description": "Modulo Terraform per EKS"
+      }
+    ],
+    "active": true
+  }
+]

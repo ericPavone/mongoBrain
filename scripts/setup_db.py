@@ -27,7 +27,9 @@ def ensure_indexes(db):
         pass
 
     gl = db["guidelines"]
-    gl.create_index([("domain", 1), ("task", 1), ("active", 1)], name="domain_task_active")
+    gl.create_index(
+        [("domain", 1), ("task", 1), ("active", 1)], name="domain_task_active"
+    )
     gl.create_index([("priority", 1)], name="priority")
     gl.create_index([("tags", 1)], name="tags")
     try:
@@ -50,32 +52,59 @@ def ensure_indexes(db):
     except OperationFailure:
         pass
 
+    ac = db["agent_config"]
+    ac.create_index(
+        [("type", 1), ("agent_id", 1)], unique=True, name="type_agent_unique"
+    )
+    ac.create_index([("agent_id", 1)], name="agent_id")
+    try:
+        ac.create_index(
+            [("type", TEXT), ("content", TEXT)],
+            name="text_search",
+        )
+    except OperationFailure:
+        pass
+
+    sk = db["skills"]
+    sk.create_index([("name", 1)], unique=True, name="name_unique")
+    sk.create_index([("active", 1)], name="active")
+    sk.create_index([("triggers", 1)], name="triggers")
+    try:
+        sk.create_index(
+            [("name", TEXT), ("description", TEXT), ("triggers", TEXT)],
+            name="text_search",
+        )
+    except OperationFailure:
+        pass
+
 
 def insert_starter_seed(db):
     now = datetime.now(timezone.utc)
     try:
-        db["seeds"].insert_one({
-            "name": "db-bridge-usage",
-            "description": "How to use the db-bridge skill to persist agent knowledge",
-            "content": (
-                "db-bridge stores three types of data:\n"
-                "1. memories — facts, preferences, notes learned from conversations\n"
-                "2. guidelines — SOPs, checklists, best practices per domain/task\n"
-                "3. seeds — portable knowledge packages transferable between agents\n\n"
-                "Use memory_ops.py to store, search, export, import, prune, and deactivate entries."
-            ),
-            "domain": "openclaw",
-            "difficulty": "beginner",
-            "tags": ["db-bridge", "memory", "getting-started"],
-            "dependencies": [],
-            "version": 1,
-            "author": "db-bridge",
-            "created_at": now,
-            "updated_at": now,
-        })
-        print("Starter seed 'db-bridge-usage' inserted.")
+        db["seeds"].insert_one(
+            {
+                "name": "mongoBrain-usage",
+                "description": "How to use the mongoBrain skill to persist agent knowledge",
+                "content": (
+                    "mongoBrain stores three types of data:\n"
+                    "1. memories — facts, preferences, notes learned from conversations\n"
+                    "2. guidelines — SOPs, checklists, best practices per domain/task\n"
+                    "3. seeds — portable knowledge packages transferable between agents\n\n"
+                    "Use memory_ops.py to store, search, export, import, prune, and deactivate entries."
+                ),
+                "domain": "openclaw",
+                "difficulty": "beginner",
+                "tags": ["mongoBrain", "memory", "getting-started"],
+                "dependencies": [],
+                "version": 1,
+                "author": "mongoBrain",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        print("Starter seed 'mongoBrain-usage' inserted.")
     except DuplicateKeyError:
-        print("Starter seed 'db-bridge-usage' already exists, skipped.")
+        print("Starter seed 'mongoBrain-usage' already exists, skipped.")
 
 
 def main():
@@ -87,7 +116,7 @@ def main():
     print("Connected.")
 
     ensure_indexes(db)
-    print("Indexes ensured for: memories, guidelines, seeds.")
+    print("Indexes ensured for: memories, guidelines, seeds, agent_config, skills.")
 
     insert_starter_seed(db)
     print("Setup complete.")

@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "db-bridge"
+name = "mongoBrain"
 version = "0.1.0"
 description = "OpenClaw skill: persist agent memory, guidelines, and knowledge seeds in MongoDB"
 authors = []

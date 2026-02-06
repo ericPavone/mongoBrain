@@ -1,4 +1,4 @@
-# db-bridge — Schema Reference
+# mongoBrain — Schema Reference
 
 ## Connection
 
@@ -141,6 +141,157 @@ Seeds are exported as JSON arrays. Each element matches the schema above minus `
     "dependencies": [],
     "version": 1,
     "author": "team"
+  }
+]
+```
+
+---
+
+## Collection: `agent_config`
+
+Agent configuration sections. Each document is one config type (soul, identity, tools, etc.) for a specific agent. Upsert semantics: storing the same `type` + `agent_id` overwrites the previous value.
+
+```json
+{
+  "_id": "ObjectId",
+  "type": "string — one of: soul, user, identity, tools, agents, heartbeat, bootstrap, boot (required)",
+  "content": "string — markdown content for this config section (required)",
+  "agent_id": "string — agent identifier (default: 'default')",
+  "version": "int (default: 1)",
+  "created_at": "datetime (auto)",
+  "updated_at": "datetime (auto)"
+}
+```
+
+### Indexes
+
+| Name | Fields | Type | Purpose |
+|------|--------|------|---------|
+| `type_agent_unique` | `{type: 1, agent_id: 1}` | unique compound | One config per type per agent |
+| `agent_id` | `{agent_id: 1}` | single | Load all config for an agent at startup |
+| `text_search` | `{type: "text", content: "text"}` | text | Full-text search |
+
+### Notes
+
+- `type` + `agent_id` is the logical primary key. `store config` performs upsert (create or overwrite).
+- Workspace file migration (`migrate workspace-files`) now targets this collection instead of `seeds`.
+
+### Export/Import Format
+
+Exported as JSON array. Each element matches the schema above minus `_id`, `created_at`, `updated_at`. `type` + `agent_id` is the upsert key.
+
+```json
+[
+  {
+    "type": "soul",
+    "content": "You are a helpful coding assistant...",
+    "agent_id": "default",
+    "version": 1
+  }
+]
+```
+
+---
+
+## Collection: `skills`
+
+Self-contained skill packages with embedded guidelines, seeds, tools, examples, and references. `name` is the unique key.
+
+```json
+{
+  "_id": "ObjectId",
+  "name": "string — unique skill identifier, e.g. 'code-review' (required, unique)",
+  "description": "string — what this skill does (required)",
+  "version": "int (default: 1)",
+  "triggers": ["string — keywords that activate this skill, e.g. 'review', 'PR review'"],
+  "depends_on": ["string — names of prerequisite skills"],
+  "guidelines": [
+    {
+      "title": "string",
+      "content": "string",
+      "task": "string",
+      "priority": "int",
+      "agent": "string — optional capability reference (agent type or skill name, see resolution logic below)"
+    }
+  ],
+  "seeds": [
+    {
+      "name": "string",
+      "description": "string",
+      "content": "string",
+      "difficulty": "string"
+    }
+  ],
+  "tools": [
+    {
+      "name": "string",
+      "type": "string — one of: cli, mcp, api, manual (default: 'cli')",
+      "command": "string",
+      "description": "string",
+      "config": "object — optional type-specific parameters (e.g. MCP server config, API headers)"
+    }
+  ],
+  "examples": [
+    {
+      "input": "string",
+      "output": "string",
+      "description": "string"
+    }
+  ],
+  "references": [
+    {
+      "url": "string",
+      "title": "string",
+      "description": "string"
+    }
+  ],
+  "active": "bool (default: true)",
+  "created_at": "datetime (auto)",
+  "updated_at": "datetime (auto)"
+}
+```
+
+### Indexes
+
+| Name | Fields | Type | Purpose |
+|------|--------|------|---------|
+| `name_unique` | `{name: 1}` | unique | Enforce unique skill names |
+| `active` | `{active: 1}` | single | Filter active skills |
+| `triggers` | `{triggers: 1}` | multikey | Fast trigger matching |
+| `text_search` | `{name: "text", description: "text", triggers: "text"}` | text | Full-text search |
+
+### Notes
+
+- `store skill` creates a minimal skill (name + description + triggers). Use `import-skills --file` for the full document with nested arrays.
+- `match-skill --trigger` queries the `triggers` multikey index to find skills by activation keyword.
+- `depends_on` references other skill names; the runtime should load dependencies recursively.
+- `guidelines[].agent` is a soft capability reference resolved at runtime: (1) known agent type → delegate, (2) skill name in DB → load skill context, (3) neither → current agent handles step. Absence means current agent.
+- `tools[].type` defaults to `cli`. Tools with `type: "mcp"` require the MCP server to be connected; if unavailable, skip or suggest manual alternative. `config` carries type-specific parameters (e.g. `file_key` for Figma MCP).
+
+### Export/Import Format
+
+Skills are exported as JSON arrays (or a single object for import). Each element matches the schema above minus `_id`, `created_at`, `updated_at`. `name` is the upsert key.
+
+```json
+[
+  {
+    "name": "code-review",
+    "description": "Structured code review with checklist",
+    "version": 1,
+    "triggers": ["review", "code review", "PR review"],
+    "depends_on": ["git-basics"],
+    "guidelines": [
+      { "title": "Review Checklist", "content": "1. Check naming...", "task": "review", "priority": 9 }
+    ],
+    "seeds": [],
+    "tools": [
+      { "name": "diff", "command": "git diff", "description": "Show changes" }
+    ],
+    "examples": [
+      { "input": "Review this PR", "output": "Starting review...", "description": "Basic trigger" }
+    ],
+    "references": [],
+    "active": true
   }
 ]
 ```

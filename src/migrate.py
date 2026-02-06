@@ -1,7 +1,7 @@
 """Migrate OpenClaw native state into MongoDB.
 
 Sources migrated:
-- Workspace files (SOUL.md, USER.md, IDENTITY.md, TOOLS.md, AGENTS.md, HEARTBEAT.md, BOOTSTRAP.md)
+- Workspace files (SOUL.md, USER.md, IDENTITY.md, TOOLS.md, AGENTS.md, HEARTBEAT.md, BOOTSTRAP.md) → agent_config
 - knowledge/ directory (any .md → seeds)
 - templates/ directory (any .md → seeds)
 - projects/ directory (each project's .md files → seeds, grouped by project)
@@ -121,7 +121,7 @@ def _slugify(text: str) -> str:
 
 
 # --------------------------------------------------------------------------
-# Workspace files → seeds
+# Workspace files → agent_config
 # --------------------------------------------------------------------------
 
 _WORKSPACE_FILES = [
@@ -132,26 +132,41 @@ _WORKSPACE_FILES = [
     ("AGENTS.md", "Agent definitions, routing rules, personas", "agents"),
     ("HEARTBEAT.md", "Scheduled heartbeat instructions", "heartbeat"),
     ("BOOTSTRAP.md", "Initial workspace setup instructions", "bootstrap"),
+    ("BOOT.md", "Executed on gateway startup via boot-md hook", "boot"),
 ]
 
 
 def migrate_workspace_files(args):
     ws = _resolve_workspace(args)
-    col = get_db()["seeds"]
-    migrated = skipped = 0
+    col = get_db()["agent_config"]
+    agent_id = getattr(args, "agent_id", "default") or "default"
+    now = datetime.now(timezone.utc)
+    upserted = updated = skipped = 0
 
-    for filename, description, slug in _WORKSPACE_FILES:
+    for filename, _, slug in _WORKSPACE_FILES:
         filepath = ws / filename
         if not filepath.is_file():
             continue
         text = filepath.read_text(encoding="utf-8").strip()
-        if _insert_seed(col, f"openclaw-{slug}", f"Migrated from {filename}: {description}",
-                        text, "openclaw-config", ["migrated", "workspace", slug], "beginner"):
-            migrated += 1
+        if not text or len(text) < 10:
+            skipped += 1
+            continue
+
+        filter_doc = {"type": slug, "agent_id": agent_id}
+        update = {
+            "$set": {"content": text, "updated_at": now},
+            "$setOnInsert": {"type": slug, "agent_id": agent_id, "version": 1, "created_at": now},
+        }
+        r = col.update_one(filter_doc, update, upsert=True)
+        if r.upserted_id:
+            upserted += 1
+        elif r.modified_count:
+            updated += 1
         else:
             skipped += 1
 
-    dump({"migrated": migrated, "skipped": skipped, "source": str(ws), "type": "workspace-files"})
+    dump({"upserted": upserted, "updated": updated, "skipped": skipped,
+          "source": str(ws), "agent_id": agent_id, "type": "workspace-files"})
 
 
 # --------------------------------------------------------------------------
@@ -218,6 +233,29 @@ def migrate_templates(args):
 # projects/ → seeds (one seed per project, all .md files concatenated)
 # --------------------------------------------------------------------------
 
+def _build_project_seed(project_dir: Path) -> dict | None:
+    md_files = sorted(project_dir.glob("**/*.md"))
+    if not md_files:
+        return None
+
+    parts = []
+    for md in md_files:
+        text = md.read_text(encoding="utf-8").strip()
+        if text:
+            parts.append(f"# {md.relative_to(project_dir)}\n\n{text}")
+
+    if not parts:
+        return None
+
+    slug = _slugify(project_dir.name)
+    return {
+        "name": f"project-{slug}",
+        "description": f"Project specs: {project_dir.name} ({len(md_files)} files)",
+        "content": "\n\n---\n\n".join(parts),
+        "slug": slug,
+    }
+
+
 def migrate_projects(args):
     ws = _resolve_workspace(args)
     projects_dir = ws / "projects"
@@ -232,28 +270,11 @@ def migrate_projects(args):
     for project_dir in sorted(projects_dir.iterdir()):
         if not project_dir.is_dir():
             continue
-
-        md_files = sorted(project_dir.glob("**/*.md"))
-        if not md_files:
+        seed = _build_project_seed(project_dir)
+        if not seed:
             continue
-
-        parts = []
-        for md in md_files:
-            rel = md.relative_to(project_dir)
-            text = md.read_text(encoding="utf-8").strip()
-            if text:
-                parts.append(f"# {rel}\n\n{text}")
-
-        if not parts:
-            continue
-
-        slug = _slugify(project_dir.name)
-        name = f"project-{slug}"
-        combined = "\n\n---\n\n".join(parts)
-        description = f"Project specs: {project_dir.name} ({len(md_files)} files)"
-
-        if _insert_seed(col, name, description, combined, "openclaw-projects",
-                        ["migrated", "project", slug]):
+        if _insert_seed(col, seed["name"], seed["description"], seed["content"],
+                        "openclaw-projects", ["migrated", "project", seed["slug"]]):
             migrated += 1
         else:
             skipped += 1
@@ -293,6 +314,26 @@ def migrate_memory_md(args):
 # memory/ daily logs → memories
 # --------------------------------------------------------------------------
 
+def _parse_log_entries(log_file: Path) -> list[dict]:
+    text = log_file.read_text(encoding="utf-8")
+    sections = _parse_sections(text)
+    date_match = _DATE_SLUG_RE.match(log_file.name)
+    date_str = date_match.group(1) if date_match else log_file.stem
+    slug = date_match.group(2) if date_match and date_match.group(2) else ""
+
+    entries = []
+    for section in sections:
+        tags = ["migrated", "daily-log", f"date:{date_str}"]
+        if slug:
+            tags.append(f"session:{slug}")
+        entries.append({
+            "content": section["body"],
+            "tags": tags,
+            "summary": f"[{date_str}] {section['heading']}",
+        })
+    return entries
+
+
 def migrate_daily_logs(args):
     ws = _resolve_workspace(args)
     memory_dir = ws / "memory"
@@ -311,20 +352,9 @@ def migrate_daily_logs(args):
     migrated = skipped = 0
 
     for log_file in log_files:
-        text = log_file.read_text(encoding="utf-8")
-        entries = _parse_sections(text)
-        date_match = _DATE_SLUG_RE.match(log_file.name)
-        date_str = date_match.group(1) if date_match else log_file.stem
-        slug = (date_match.group(2) if date_match and date_match.group(2) else "")
-
-        for entry in entries:
-            tags = ["migrated", "daily-log", f"date:{date_str}"]
-            if slug:
-                tags.append(f"session:{slug}")
-            summary = f"[{date_str}] {entry['heading']}"
-
-            if _insert_memory(col, entry["body"], "note", domain, tags,
-                              summary=summary, confidence=0.75):
+        for entry in _parse_log_entries(log_file):
+            if _insert_memory(col, entry["content"], "note", domain, entry["tags"],
+                              summary=entry["summary"], confidence=0.75):
                 migrated += 1
             else:
                 skipped += 1
@@ -340,7 +370,7 @@ def migrate_daily_logs(args):
 def migrate_all(args):
     ws = _resolve_workspace(args)
 
-    print("--- Workspace files → seeds ---")
+    print("--- Workspace files → agent_config ---")
     migrate_workspace_files(args)
 
     if (ws / "knowledge").is_dir():

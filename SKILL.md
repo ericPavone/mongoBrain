@@ -1,6 +1,6 @@
 ---
-name: db-bridge
-description: "Persist agent memory, guidelines, and knowledge seeds in MongoDB. Use for: remember/save/store, search knowledge, add guideline, seed/export/import, migrate workspace state, persistent cross-session context. Supports local, remote, Atlas, VPN+TLS."
+name: mongoBrain
+description: "Persist agent memory, guidelines, seeds, config, and skills in MongoDB. Use for: remember/save/store, search knowledge, add guideline, seed/export/import, agent config, skill discovery/loading, migrate workspace state, persistent cross-session context. Supports local, remote, Atlas, VPN+TLS."
 user-invocable: true
 metadata:
   openclaw:
@@ -9,17 +9,19 @@ metadata:
       bins: [python3]
 ---
 
-# db-bridge — Persistent Agent Knowledge in MongoDB
+# mongoBrain — Persistent Agent Knowledge in MongoDB
 
 ## Overview
 
-Three collections complement OpenClaw's native memory (MEMORY.md + daily logs = short-term) with structured, long-term storage:
+Five collections complement OpenClaw's native memory (MEMORY.md + daily logs = short-term) with structured, long-term storage:
 
 | Collection | Purpose | Key fields |
 |------------|---------|------------|
 | `memories` | Facts, preferences, notes, learned knowledge | `content`, `domain`, `category`, `confidence` |
 | `guidelines` | SOPs, checklists, best practices per domain/task | `title`, `content`, `domain`, `task`, `priority` |
 | `seeds` | Portable knowledge packages (transferable between agents) | `name`, `content`, `domain`, `difficulty`, `dependencies` |
+| `agent_config` | Agent config sections (soul, identity, tools, etc.) — upsert by type+agent_id | `type`, `content`, `agent_id` |
+| `skills` | Self-contained skills with embedded guidelines, seeds, tools, examples | `name`, `triggers`, `depends_on`, `guidelines[]`, `seeds[]`, `tools[]` |
 
 ## Connection
 
@@ -36,7 +38,7 @@ Environment variables:
 ## Setup
 
 ```bash
-cd <workspace>/skills/db-bridge
+cd <workspace>/skills/mongoBrain
 poetry install
 poetry run python3 scripts/setup_db.py
 ```
@@ -83,6 +85,28 @@ poetry run python3 scripts/memory_ops.py store seed \
   --tags python async
 ```
 
+### Store agent config (upsert)
+
+```bash
+poetry run python3 scripts/memory_ops.py store config \
+  --type soul \
+  --content "You are a helpful coding assistant." \
+  --agent-id default
+```
+
+Types: `soul`, `user`, `identity`, `tools`, `agents`, `heartbeat`, `bootstrap`, `boot`. Overwrites if type+agent_id already exists.
+
+### Store a skill (minimal)
+
+```bash
+poetry run python3 scripts/memory_ops.py store skill \
+  --name "code-review" \
+  --description "Structured code review with checklist" \
+  --triggers review "code review" "PR review"
+```
+
+For full skills with embedded data, use `import-skills --file`.
+
 ### Search
 
 ```bash
@@ -94,6 +118,44 @@ poetry run python3 scripts/memory_ops.py search guideline --query "code review" 
 
 # Search seeds
 poetry run python3 scripts/memory_ops.py search seed --query "async" --domain python
+
+# Search config
+poetry run python3 scripts/memory_ops.py search config --query "assistant" --agent-id default
+
+# Search skills
+poetry run python3 scripts/memory_ops.py search skill --query "review" --active-only
+```
+
+### Agent Config
+
+```bash
+# Load full agent config
+poetry run python3 scripts/memory_ops.py get-config --agent-id default
+
+# Load single section
+poetry run python3 scripts/memory_ops.py get-config --type soul
+
+# Export / import
+poetry run python3 scripts/memory_ops.py export-config --agent-id default > config.json
+poetry run python3 scripts/memory_ops.py import-config --file config.json --agent-id other-agent
+```
+
+### Skills
+
+```bash
+# Match a skill by trigger keyword
+poetry run python3 scripts/memory_ops.py match-skill --trigger "review"
+
+# Load full skill (guidelines, seeds, tools, examples, references)
+poetry run python3 scripts/memory_ops.py get-skill --name "code-review"
+
+# Import / export
+poetry run python3 scripts/memory_ops.py import-skills --file skill.json
+poetry run python3 scripts/memory_ops.py export-skills > all-skills.json
+
+# Activate / deactivate
+poetry run python3 scripts/memory_ops.py activate-skill --name "code-review"
+poetry run python3 scripts/memory_ops.py deactivate-skill --name "code-review"
 ```
 
 ### Export seeds
@@ -133,13 +195,13 @@ poetry run python3 scripts/memory_ops.py migrate scan --workspace ~/.openclaw/wo
 ### Migrate everything
 
 ```bash
-poetry run python3 scripts/memory_ops.py migrate all --workspace ~/.openclaw/workspace
+poetry run python3 scripts/memory_ops.py migrate all --workspace ~/.openclaw/workspace --agent-id default
 ```
 
 ### Migrate individual sources
 
 ```bash
-poetry run python3 scripts/memory_ops.py migrate workspace-files --workspace ~/.openclaw/workspace
+poetry run python3 scripts/memory_ops.py migrate workspace-files --workspace ~/.openclaw/workspace --agent-id default
 poetry run python3 scripts/memory_ops.py migrate knowledge --workspace ~/.openclaw/workspace
 poetry run python3 scripts/memory_ops.py migrate templates --workspace ~/.openclaw/workspace
 poetry run python3 scripts/memory_ops.py migrate projects --workspace ~/.openclaw/workspace
@@ -149,16 +211,16 @@ poetry run python3 scripts/memory_ops.py migrate daily-logs --workspace ~/.openc
 
 What gets migrated:
 
-| Source | Target | Domain |
-|--------|--------|--------|
-| SOUL.md, USER.md, IDENTITY.md, TOOLS.md, AGENTS.md, HEARTBEAT.md, BOOTSTRAP.md | seeds | `openclaw-config` |
+| Source | Target | Key |
+|--------|--------|-----|
+| SOUL.md, USER.md, IDENTITY.md, TOOLS.md, AGENTS.md, HEARTBEAT.md, BOOTSTRAP.md, BOOT.md | agent_config (upsert type+agent_id) | `--agent-id` |
 | knowledge/*.md | seeds | `openclaw-knowledge` |
 | templates/*.md | seeds | `openclaw-templates` |
 | projects/\<name\>/\*\*/*.md | seeds (1 per project) | `openclaw-projects` |
-| MEMORY.md sections | memories | `openclaw-memory` |
-| memory/*.md daily logs | memories | `openclaw-daily` |
+| MEMORY.md sections | memories | `--domain` |
+| memory/*.md daily logs | memories | `--domain` |
 
-Migration is idempotent: duplicates are skipped. Safe to re-run.
+Migration is idempotent: workspace files use upsert (update if exists, create if new), seeds and memories skip duplicates. Safe to re-run.
 
 ## Auto-Learn Protocol
 
@@ -175,9 +237,74 @@ Follow these rules to grow the agent's knowledge automatically:
 ### When to SEARCH
 
 1. **Before answering any domain-specific question** → search `memories` and `guidelines` for that domain.
-2. **When asked "what do you know about X"** → search all three collections.
+2. **When asked "what do you know about X"** → search all collections.
 3. **Before starting a task with established procedures** → search `guidelines` for matching domain+task.
 4. **When a topic comes up for the first time in a session** → search `seeds` for foundational knowledge.
+5. **When the user requests a task that might match a skill** → `match-skill --trigger` to find a matching skill, then `get-skill` to load the full context.
+
+### At Session Start
+
+**Main agent:**
+
+1. `get-config --agent-id default` → load all sections (soul, identity, tools, agents, user, heartbeat, bootstrap, boot).
+2. `search skill --active-only` → build a lightweight index of available skills (name, triggers, description) for fast matching during the session.
+
+**Sub-agent** (OpenClaw sub-agents only receive AGENTS.md + TOOLS.md natively):
+
+1. `get-config --agent-id default --type agents` + `get-config --agent-id default --type tools` → load only the relevant sections.
+2. Skip skill index unless the sub-agent's task requires skill matching.
+
+### Skill Loading Flow
+
+```
+User requests a task (e.g. "do a code review")
+  │
+  ├── match-skill --trigger "review" → finds "code-review"
+  ├── get-skill --name "code-review" → loads full skill with:
+  │     guidelines[], seeds[], tools[], examples[], references[]
+  ├── Check depends_on → load prerequisite skills if needed
+  └── Execute guidelines in priority order, respecting agent delegation
+```
+
+### Agent Delegation in Guidelines
+
+Guidelines can include an optional `agent` field that acts as a **capability reference**. It tells the runtime who should handle that step.
+
+Resolution order:
+
+```
+guideline.agent = "designer"
+  │
+  ├── 1. Agent available in runtime? (OpenClaw sub-agent, configured agent type)
+  │      → Delegate the step to that agent
+  │
+  ├── 2. Skill exists in DB with that name? (get-skill --name "designer")
+  │      → Load the skill's context (guidelines, seeds, tools) and use it
+  │      to execute the step
+  │
+  └── 3. Neither found?
+         → Current agent executes the step directly using the guideline content
+```
+
+This means `agent` is a soft reference, not a hard dependency. Skills work regardless of whether the referenced agents/skills are available — they just get more capable when they are.
+
+Example: a "landing-page-creation" skill with `agent: "designer"` on the mockup step will:
+- Delegate to a designer agent if one exists in the runtime
+- Load a "designer" skill from the DB if one is stored there (bringing its own tools, e.g. Figma MCP)
+- Fall back to the current agent doing the mockup step itself using the guideline instructions
+
+### Tool Types
+
+Tools can specify a `type` field to indicate how they should be invoked:
+
+| Type | Default | Invocation | Example |
+|------|---------|-----------|---------|
+| `cli` | yes | Shell command via Bash | `terraform apply` |
+| `mcp` | — | MCP tool call (if server available) | `figma_create_file` |
+| `api` | — | HTTP request | `https://api.example.com/check` |
+| `manual` | — | Instruction for the user, not executable | "Open Figma and share the link" |
+
+If `type` is absent, it defaults to `cli` (backward compatible). Tools with `type: "mcp"` are only usable if the corresponding MCP server is connected. If not, the agent should skip the tool or suggest a manual alternative.
 
 ### Decision Logic: STORE vs SEARCH
 
@@ -185,7 +312,7 @@ Follow these rules to grow the agent's knowledge automatically:
 User message received
   ├── Contains "remember/save/store/don't forget" → STORE memory
   ├── Asks "what do you know about X" → SEARCH all collections
-  ├── Requests a task → SEARCH guidelines for domain+task, then execute
+  ├── Requests a task → match-skill first, then SEARCH guidelines for domain+task, then execute
   ├── Provides feedback/correction → STORE memory (feedback category)
   ├── After task completion (significant) → evaluate STORE as guideline
   └── Domain-specific question → SEARCH memories+seeds, then answer
@@ -198,12 +325,12 @@ Before storing, the script checks for existing documents with the same `content`
 ### Integration with Native OpenClaw Memory
 
 - **Short-term**: OpenClaw's MEMORY.md + daily logs (session-memory hook) handle ephemeral, session-scoped context.
-- **Long-term**: db-bridge stores structured, searchable, versioned knowledge that persists across sessions and can be transferred between agents.
-- **Workflow**: At session start, search db-bridge for relevant context. During session, store significant learnings. MEMORY.md remains the "working memory" scratchpad.
+- **Long-term**: mongoBrain stores structured, searchable, versioned knowledge that persists across sessions and can be transferred between agents.
+- **Workflow**: At session start, search mongoBrain for relevant context. During session, store significant learnings. MEMORY.md remains the "working memory" scratchpad.
 
-## Seed Store Format
+## Store Formats
 
-When the user or agent wants to store structured knowledge, follow this format:
+When the user or agent wants to store structured knowledge:
 
 ```
 store memory --content "<the knowledge>" --category <type> --domain <domain> --source conversation
@@ -213,4 +340,16 @@ For portable knowledge packages:
 
 ```
 store seed --name "<unique-slug>" --description "<one-liner>" --content "<full knowledge>" --domain <domain> --difficulty <level>
+```
+
+For agent configuration (upsert):
+
+```
+store config --type <soul|user|identity|tools|agents|heartbeat|bootstrap|boot> --content "<markdown>" --agent-id default
+```
+
+For skills (minimal — use import-skills for full documents):
+
+```
+store skill --name "<slug>" --description "<one-liner>" --triggers <keyword1> <keyword2>
 ```

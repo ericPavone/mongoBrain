@@ -364,6 +364,51 @@ def migrate_daily_logs(args):
 
 
 # --------------------------------------------------------------------------
+# seed-boot — ensure BOOT.md has the mongoBrain recovery seed
+# --------------------------------------------------------------------------
+
+_BOOT_MARKER = "<!-- mongoBrain:seed-boot -->"
+
+_BOOT_SEED = f"""{_BOOT_MARKER}
+## mongoBrain — Identity Recovery
+
+All'avvio, carica la configurazione completa dal database:
+
+```bash
+poetry run python3 scripts/memory_ops.py get-config --agent-id default
+```
+
+Applica ogni sezione (soul, identity, user, tools, agents, heartbeat, bootstrap)
+come contesto operativo per questa sessione.
+
+Poi carica l'indice delle skill attive:
+
+```bash
+poetry run python3 scripts/memory_ops.py search skill --query "" --active-only
+```
+
+Se una sezione non e' presente nel database, ignorala e prosegui.
+"""
+
+
+def seed_boot(args):
+    ws = _resolve_workspace(args)
+    boot_file = ws / "BOOT.md"
+
+    if boot_file.is_file():
+        existing = boot_file.read_text(encoding="utf-8")
+        if _BOOT_MARKER in existing:
+            dump({"action": "skipped", "reason": "seed already present", "file": str(boot_file)})
+            return
+        updated = existing.rstrip() + "\n\n" + _BOOT_SEED
+        boot_file.write_text(updated, encoding="utf-8")
+        dump({"action": "appended", "file": str(boot_file)})
+    else:
+        boot_file.write_text(f"# Boot\n\n{_BOOT_SEED}", encoding="utf-8")
+        dump({"action": "created", "file": str(boot_file)})
+
+
+# --------------------------------------------------------------------------
 # migrate all
 # --------------------------------------------------------------------------
 
@@ -393,6 +438,9 @@ def migrate_all(args):
     if memory_dir.is_dir() and list(memory_dir.glob("*.md")):
         print("\n--- daily logs → memories ---")
         migrate_daily_logs(args)
+
+    print("\n--- seed-boot → BOOT.md ---")
+    seed_boot(args)
 
     print("\n--- Migration complete ---")
 

@@ -192,6 +192,18 @@ def _build_parser():
     da.add_argument("--domain", default=None)
     da.set_defaults(func=guidelines.deactivate)
 
+    # --- seed-boot -------------------------------------------------------
+    sb = sub.add_parser(
+        "seed-boot",
+        help="Ensure BOOT.md has the mongoBrain recovery seed",
+    )
+    sb.add_argument(
+        "--workspace",
+        default=None,
+        help="Path to OpenClaw workspace (default: ~/.openclaw/workspace)",
+    )
+    sb.set_defaults(func=migrate.seed_boot)
+
     # --- migrate ---------------------------------------------------------
     mg = sub.add_parser("migrate", help="Migrate OpenClaw native state to MongoDB")
     mg_sub = mg.add_subparsers(dest="type", required=True)

@@ -78,9 +78,12 @@ L'agente ha 5 tipi di storage nel DB:
 cd mongoBrain
 poetry install
 poetry run python3 scripts/setup_db.py
+poetry run python3 scripts/memory_ops.py seed-boot --workspace ~/.openclaw/workspace
 ```
 
 `setup_db.py` crea le 5 collection, tutti gli indici, e un seed starter. E' idempotente: puoi eseguirlo quante volte vuoi.
+
+`seed-boot` inietta nel BOOT.md del workspace le istruzioni minimali per recuperare l'identita' dell'agente dal database all'avvio. E' il **seme irriducibile**: l'unica informazione che non puo' stare nel DB perche' serve per sapere che il DB esiste. Idempotente: se il seme e' gia' presente, non fa nulla. Se BOOT.md ha gia' altro contenuto, lo appende.
 
 ---
 
@@ -158,7 +161,7 @@ mongoBrain/
     landing-page-creation.json # Skill con agent delegation + tool MCP
   tests/
     docker-compose.yml        # MongoDB locale per test (tmpfs)
-    test_all.py               # Suite automatica: 134 test su tutte le collection
+    test_all.py               # Suite automatica: 143 test su tutte le collection
 ```
 
 ---
@@ -304,6 +307,14 @@ Disattiva una guideline senza cancellarla (`active: false`).
 
 ```bash
 poetry run python3 scripts/memory_ops.py deactivate --title "PR Review Checklist"
+```
+
+### Seed-Boot
+
+Inietta nel BOOT.md del workspace il seme irriducibile per il recovery dell'identita' dal DB. Idempotente.
+
+```bash
+poetry run python3 scripts/memory_ops.py seed-boot --workspace ~/.openclaw/workspace
 ```
 
 ---
@@ -646,6 +657,8 @@ poetry run python3 scripts/memory_ops.py migrate all --workspace ~/.openclaw/wor
 
 Se ometti `--workspace`, usa il default `~/.openclaw/workspace`. Se ometti `--agent-id`, usa `default`.
 
+`migrate all` chiama anche `seed-boot` automaticamente: al termine della migrazione, BOOT.md conterra' il seme per il recovery dell'identita'.
+
 ### Migra singole sorgenti
 
 ```bash
@@ -698,7 +711,7 @@ poetry run python3 scripts/memory_ops.py migrate all --workspace /tmp/workspace
 
 ## Test
 
-### Suite automatica (134 test)
+### Suite automatica (143 test)
 
 ```bash
 # Avvia MongoDB locale
@@ -722,6 +735,7 @@ docker compose -f tests/docker-compose.yml down
 | Skills | Store, dedup, get, match, activate/deactivate, search --active-only | 16 |
 | Skills import | Full document (guidelines, seeds, tools, examples), agent field, tool type/config MCP, single object import | 27 |
 | Migration | Scan, workspace files → agent_config, file piccoli saltati, idempotenza, knowledge, MEMORY.md, daily logs | 13 |
+| Seed-Boot | Creazione BOOT.md, idempotenza, append a file esistente, integrazione con migrate all | 9 |
 | Edge cases | Tutte le categorie, tutti i tipi config, caratteri speciali, depends_on, search limit | 21 |
 | Chat simulation | Flusso completo: load config → search → match-skill → remember → correzione → store guideline → agent delegation | 10 |
 

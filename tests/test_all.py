@@ -601,6 +601,57 @@ def test_migration():
 
 
 # ---------------------------------------------------------------------------
+# Test: seed-boot
+# ---------------------------------------------------------------------------
+
+def test_seed_boot():
+    print("=== SEED-BOOT ===")
+
+    tmpdir = tempfile.mkdtemp()
+    ws = Path(tmpdir)
+
+    # 1. BOOT.md doesn't exist → created
+    result = run(["seed-boot", "--workspace", str(ws)])
+    assert_eq("seed-boot creates BOOT.md", result["action"], "created")
+    boot = (ws / "BOOT.md").read_text(encoding="utf-8")
+    assert_contains("created BOOT.md has marker", boot, "mongoBrain:seed-boot")
+    assert_contains("created BOOT.md has get-config", boot, "get-config")
+
+    # 2. Run again → skipped (already present)
+    result = run(["seed-boot", "--workspace", str(ws)])
+    assert_eq("seed-boot idempotent", result["action"], "skipped")
+
+    # 3. BOOT.md exists with other content, no marker → appended
+    (ws / "BOOT.md").write_text("# Boot\n\nExisting boot instructions.\n", encoding="utf-8")
+    result = run(["seed-boot", "--workspace", str(ws)])
+    assert_eq("seed-boot appends to existing", result["action"], "appended")
+    boot = (ws / "BOOT.md").read_text(encoding="utf-8")
+    assert_contains("appended preserves original", boot, "Existing boot instructions")
+    assert_contains("appended adds seed", boot, "mongoBrain:seed-boot")
+
+    # 4. Run again on appended file → skipped
+    result = run(["seed-boot", "--workspace", str(ws)])
+    assert_eq("seed-boot idempotent after append", result["action"], "skipped")
+
+    # 5. Verify migrate all also calls seed-boot
+    # Create minimal workspace for migrate all
+    (ws / "SOUL.md").write_text("You are a test agent for seed-boot validation.", encoding="utf-8")
+    (ws / "BOOT.md").unlink()  # remove to test that migrate all recreates it
+    # migrate all outputs mixed print+JSON to stdout, we just check it doesn't crash
+    subprocess.run(
+        CLI + ["migrate", "all", "--workspace", str(ws), "--agent-id", "seed-boot-test"],
+        capture_output=True, text=True, env=ENV, timeout=15
+    )
+    boot = (ws / "BOOT.md").read_text(encoding="utf-8")
+    assert_contains("migrate all creates BOOT.md", boot, "mongoBrain:seed-boot")
+
+    import shutil
+    shutil.rmtree(tmpdir)
+
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Test: Edge cases and cross-collection scenarios
 # ---------------------------------------------------------------------------
 
@@ -738,6 +789,7 @@ def main():
     test_skills()
     test_skills_import_full()
     test_migration()
+    test_seed_boot()
     test_edge_cases()
     test_chat_simulation()
 

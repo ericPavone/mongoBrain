@@ -41,7 +41,10 @@ Environment variables:
 cd <workspace>/skills/mongoBrain
 poetry install
 poetry run python3 scripts/setup_db.py
+poetry run python3 scripts/memory_ops.py seed-boot --workspace ~/.openclaw/workspace
 ```
+
+`seed-boot` ensures BOOT.md contains the mongoBrain recovery seed. This is the minimal instruction that allows the agent to restore its identity from the database at startup, even if the other workspace files (SOUL.md, IDENTITY.md, etc.) are missing. Idempotent: safe to re-run. Also called automatically by `migrate all`.
 
 ## Operations Reference
 
@@ -220,7 +223,7 @@ What gets migrated:
 | MEMORY.md sections | memories | `--domain` |
 | memory/*.md daily logs | memories | `--domain` |
 
-Migration is idempotent: workspace files use upsert (update if exists, create if new), seeds and memories skip duplicates. Safe to re-run.
+Migration is idempotent: workspace files use upsert (update if exists, create if new), seeds and memories skip duplicates. Safe to re-run. `migrate all` also calls `seed-boot` to ensure BOOT.md has the recovery seed.
 
 ## Auto-Learn Protocol
 
